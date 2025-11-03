@@ -132,7 +132,7 @@ def main():
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(11)
     
-    # Determine output path (CLI argument or default Output folder)    
+    # Determine output path (CLI argument or default Output folder)
     if not output:
         output = os.path.join("Output", f"{product}-eol.json")
         print(f"No output path specified, using default: {output}")
