@@ -77,14 +77,14 @@ def fetch_product(product, timeout=15):
                 retry_seconds = int(retry_after)
                 raise RateLimitError(
                     f"Rate limit exceeded. Please retry after {retry_seconds} seconds.",
-                    retry_after=retry_seconds
+                    retry_after=retry_seconds,
                 )
             except ValueError:
                 # Retry-After might be a HTTP date instead of seconds
                 raise RateLimitError(
                     f"Rate limit exceeded. Retry-After: {retry_after}",
-                    retry_after=retry_after
-                )
+                    retry_after=retry_after,
+                ) from None
         else:
             raise RateLimitError(
                 "Rate limit exceeded. Please wait before making more requests."
@@ -140,7 +140,7 @@ def parse_args():
         "products",
         nargs="+",
         metavar="product",
-        help="Product slug(s) (e.g., python, ubuntu, nodejs)"
+        help="Product slug(s) (e.g., python, ubuntu, nodejs)",
     )
     parser.add_argument(
         "-o",
@@ -160,7 +160,10 @@ def parse_args():
     parser.add_argument(
         "--one-file",
         action="store_true",
-        help="Save all products data in a single JSON file (default: one file per product)",
+        help=(
+            "Save all products data in a single JSON file "
+            "(default: one file per product)"
+        ),
     )
     return parser.parse_args()
 
@@ -189,10 +192,17 @@ def main():
             print(f"  ✗ Error: {error_msg}", file=sys.stderr)
         except RateLimitError as e:
             error_msg = str(e)
-            errors[product] = {"type": "rate_limit", "message": error_msg, "retry_after": e.retry_after}
+            errors[product] = {
+                "type": "rate_limit",
+                "message": error_msg,
+                "retry_after": e.retry_after,
+            }
             print(f"  ✗ Error: {error_msg}", file=sys.stderr)
             if e.retry_after:
-                print(f"    Hint: Wait {e.retry_after} seconds before retrying", file=sys.stderr)
+                print(
+                    f"    Hint: Wait {e.retry_after} seconds before retrying",
+                    file=sys.stderr,
+                )
         except EOLDAPIError as e:
             error_msg = str(e)
             errors[product] = {"type": "api_error", "message": error_msg}
@@ -216,19 +226,20 @@ def main():
             if not output:
                 output = os.path.join("Output", "all-products-eol.json")
                 print(f"\nNo output path specified, using default: {output}")
-            
+
             save_json(results, output)
             print(f"\nSaved data for {len(results)} product(s) to: {output}")
         else:
             # Save each product in its own file
             if output and len(products) > 1:
                 print(
-                    f"\nWarning: --output specified with multiple products but --one-file not used. "
-                    f"Using default naming pattern.",
-                    file=sys.stderr
+                    "\nWarning: --output specified with multiple products "
+                    "but --one-file not used. "
+                    "Using default naming pattern.",
+                    file=sys.stderr,
                 )
                 output = None
-            
+
             saved_files = []
             for product, data in results.items():
                 if output and len(products) == 1:
@@ -237,17 +248,17 @@ def main():
                 else:
                     # Use default naming pattern
                     file_path = os.path.join("Output", f"{product}-eol.json")
-                
+
                 save_json(data, file_path)
                 saved_files.append((product, file_path))
-            
+
             if len(saved_files) == 1:
                 print(f"\nSaved data for '{saved_files[0][0]}' to: {saved_files[0][1]}")
             else:
                 print(f"\nSaved data for {len(saved_files)} products:")
                 for product, file_path in saved_files:
                     print(f"  - {product}: {file_path}")
-    
+
     except FileSaveError as e:
         print(f"\nError: {e}", file=sys.stderr)
         sys.exit(12)
@@ -258,7 +269,7 @@ def main():
         for product, error in errors.items():
             print(f"  - {product}: {error['message']}", file=sys.stderr)
         # Exit with partial success code (we got some data but not all)
-        sys.exit(0)
+        sys.exit(5)
 
 
 if __name__ == "__main__":

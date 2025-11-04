@@ -6,7 +6,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import patch
 
 import pytest
 import responses
@@ -14,7 +14,6 @@ import responses
 # Add parent directory to path to import the module
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import endoflife_fetcher
 from endoflife_fetcher import (
     BASE_URL,
     EOLDAPIError,
@@ -180,6 +179,7 @@ class TestFetchProduct:
     def test_fetch_product_timeout(self):
         """Test request timeout."""
         import requests
+
         product = "python"
 
         with patch("endoflife_fetcher.requests.get") as mock_get:
@@ -218,7 +218,7 @@ class TestSaveJson:
         save_json(test_data, str(output_file))
 
         assert output_file.exists()
-        with open(output_file, "r", encoding="utf-8") as f:
+        with open(output_file, encoding="utf-8") as f:
             saved_data = json.load(f)
         assert saved_data == test_data
 
@@ -230,7 +230,7 @@ class TestSaveJson:
         save_json(test_data, str(output_file))
 
         assert output_file.exists()
-        with open(output_file, "r", encoding="utf-8") as f:
+        with open(output_file, encoding="utf-8") as f:
             saved_data = json.load(f)
         assert saved_data == test_data
 
@@ -241,7 +241,7 @@ class TestSaveJson:
 
         save_json(test_data, str(output_file))
 
-        with open(output_file, "r", encoding="utf-8") as f:
+        with open(output_file, encoding="utf-8") as f:
             content = f.read()
 
         # Check indentation
@@ -413,14 +413,14 @@ class TestMain:
         # Check both output files were created
         python_file = tmp_path / "Output" / "python-eol.json"
         nodejs_file = tmp_path / "Output" / "nodejs-eol.json"
-        
+
         assert python_file.exists()
         assert nodejs_file.exists()
 
         # Check content
-        with open(python_file, "r") as f:
+        with open(python_file) as f:
             assert json.load(f) == mock_data_python
-        with open(nodejs_file, "r") as f:
+        with open(nodejs_file) as f:
             assert json.load(f) == mock_data_nodejs
 
         # Check stdout
@@ -437,9 +437,24 @@ class TestMain:
         mock_data_nodejs = [{"cycle": "20"}]
         mock_data_ubuntu = [{"cycle": "22.04"}]
 
-        responses.add(responses.GET, f"{BASE_URL}/products/python", json=mock_data_python, status=200)
-        responses.add(responses.GET, f"{BASE_URL}/products/nodejs", json=mock_data_nodejs, status=200)
-        responses.add(responses.GET, f"{BASE_URL}/products/ubuntu", json=mock_data_ubuntu, status=200)
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/python",
+            json=mock_data_python,
+            status=200,
+        )
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/nodejs",
+            json=mock_data_nodejs,
+            status=200,
+        )
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/ubuntu",
+            json=mock_data_ubuntu,
+            status=200,
+        )
 
         monkeypatch.chdir(tmp_path)
 
@@ -452,7 +467,7 @@ class TestMain:
         assert output_file.exists()
 
         # Check content structure
-        with open(output_file, "r") as f:
+        with open(output_file) as f:
             data = json.load(f)
             assert "python" in data
             assert "nodejs" in data
@@ -473,10 +488,27 @@ class TestMain:
         mock_data_nodejs = [{"cycle": "20"}]
         custom_output = str(tmp_path / "my-products.json")
 
-        responses.add(responses.GET, f"{BASE_URL}/products/python", json=mock_data_python, status=200)
-        responses.add(responses.GET, f"{BASE_URL}/products/nodejs", json=mock_data_nodejs, status=200)
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/python",
+            json=mock_data_python,
+            status=200,
+        )
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/nodejs",
+            json=mock_data_nodejs,
+            status=200,
+        )
 
-        test_args = ["endoflife_fetcher.py", "python", "nodejs", "--one-file", "-o", custom_output]
+        test_args = [
+            "endoflife_fetcher.py",
+            "python",
+            "nodejs",
+            "--one-file",
+            "-o",
+            custom_output,
+        ]
         with patch.object(sys, "argv", test_args):
             main()
 
@@ -484,7 +516,7 @@ class TestMain:
         assert os.path.exists(custom_output)
 
         # Check content
-        with open(custom_output, "r") as f:
+        with open(custom_output) as f:
             data = json.load(f)
             assert data["python"] == mock_data_python
             assert data["nodejs"] == mock_data_nodejs
@@ -518,17 +550,27 @@ class TestMain:
     @responses.activate
     def test_main_partial_success(self, capsys):
         """Test main function with some products failing."""
-        responses.add(responses.GET, f"{BASE_URL}/products/python", json=[{"cycle": "3.12"}], status=200)
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/python",
+            json=[{"cycle": "3.12"}],
+            status=200,
+        )
         responses.add(responses.GET, f"{BASE_URL}/products/invalid", status=404)
-        responses.add(responses.GET, f"{BASE_URL}/products/nodejs", json=[{"cycle": "20"}], status=200)
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/nodejs",
+            json=[{"cycle": "20"}],
+            status=200,
+        )
 
         test_args = ["endoflife_fetcher.py", "python", "invalid", "nodejs"]
         with patch.object(sys, "argv", test_args):
             with pytest.raises(SystemExit) as exc_info:
                 main()
 
-        # Should exit with 0 (partial success)
-        assert exc_info.value.code == 0
+        # Should exit with 5 (partial success)
+        assert exc_info.value.code == 5
 
         captured = capsys.readouterr()
         assert "Successfully fetched data for 'python'" in captured.out
@@ -630,7 +672,9 @@ class TestMain:
         test_args = ["endoflife_fetcher.py", product]
 
         with patch.object(sys, "argv", test_args):
-            with patch("endoflife_fetcher.save_json", side_effect=FileSaveError("Mock error")):
+            with patch(
+                "endoflife_fetcher.save_json", side_effect=FileSaveError("Mock error")
+            ):
                 with pytest.raises(SystemExit) as exc_info:
                     main()
 
@@ -662,14 +706,26 @@ class TestMain:
         assert output_file.exists()
 
     @responses.activate
-    def test_main_multiple_products_with_output_warning(self, tmp_path, capsys, monkeypatch):
+    def test_main_multiple_products_with_output_warning(
+        self, tmp_path, capsys, monkeypatch
+    ):
         """Test that a warning is shown when using -o with multiple products without --one-file."""
         products = ["python", "nodejs"]
         mock_data_python = [{"cycle": "3.12"}]
         mock_data_nodejs = [{"cycle": "20"}]
 
-        responses.add(responses.GET, f"{BASE_URL}/products/python", json=mock_data_python, status=200)
-        responses.add(responses.GET, f"{BASE_URL}/products/nodejs", json=mock_data_nodejs, status=200)
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/python",
+            json=mock_data_python,
+            status=200,
+        )
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/nodejs",
+            json=mock_data_nodejs,
+            status=200,
+        )
 
         monkeypatch.chdir(tmp_path)
 
