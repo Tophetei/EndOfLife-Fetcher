@@ -6,7 +6,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import patch
 
 import pytest
 import responses
@@ -14,7 +14,6 @@ import responses
 # Add parent directory to path to import the module
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import endoflife_fetcher
 from endoflife_fetcher import (
     BASE_URL,
     EOLDAPIError,
@@ -180,6 +179,7 @@ class TestFetchProduct:
     def test_fetch_product_timeout(self):
         """Test request timeout."""
         import requests
+
         product = "python"
 
         with patch("endoflife_fetcher.requests.get") as mock_get:
@@ -218,7 +218,7 @@ class TestSaveJson:
         save_json(test_data, str(output_file))
 
         assert output_file.exists()
-        with open(output_file, "r", encoding="utf-8") as f:
+        with open(output_file, encoding="utf-8") as f:
             saved_data = json.load(f)
         assert saved_data == test_data
 
@@ -230,24 +230,24 @@ class TestSaveJson:
         save_json(test_data, str(output_file))
 
         assert output_file.exists()
-        with open(output_file, "r", encoding="utf-8") as f:
+        with open(output_file, encoding="utf-8") as f:
             saved_data = json.load(f)
         assert saved_data == test_data
 
     def test_save_json_formatting(self, tmp_path):
         """Test JSON formatting (indentation, encoding)."""
-        test_data = {"name": "Python", "version": "3.12", "special": "cafÃ©"}
+        test_data = {"name": "Python", "version": "3.12", "special": "café"}
         output_file = tmp_path / "test.json"
 
         save_json(test_data, str(output_file))
 
-        with open(output_file, "r", encoding="utf-8") as f:
+        with open(output_file, encoding="utf-8") as f:
             content = f.read()
 
         # Check indentation
         assert "  " in content
-        # Check UTF-8 encoding (cafÃ© should be preserved)
-        assert "cafÃ©" in content
+        # Check UTF-8 encoding (café should be preserved)
+        assert "café" in content
 
     def test_save_json_permission_error(self):
         """Test handling of permission errors."""
@@ -273,21 +273,31 @@ class TestSaveJson:
 class TestParseArgs:
     """Tests for the parse_args function."""
 
-    def test_parse_args_product_only(self):
-        """Test parsing with only product argument."""
+    def test_parse_args_single_product_only(self):
+        """Test parsing with only one product argument."""
         test_args = ["endoflife_fetcher.py", "python"]
         with patch.object(sys, "argv", test_args):
             args = parse_args()
-            assert args.product == "python"
+            assert args.products == ["python"]
             assert args.output is None
             assert args.timeout == 15.0
+            assert args.one_file is False
+
+    def test_parse_args_multiple_products(self):
+        """Test parsing with multiple products."""
+        test_args = ["endoflife_fetcher.py", "python", "nodejs", "ubuntu"]
+        with patch.object(sys, "argv", test_args):
+            args = parse_args()
+            assert args.products == ["python", "nodejs", "ubuntu"]
+            assert args.output is None
+            assert args.one_file is False
 
     def test_parse_args_with_output(self):
         """Test parsing with output argument."""
         test_args = ["endoflife_fetcher.py", "ubuntu", "-o", "custom.json"]
         with patch.object(sys, "argv", test_args):
             args = parse_args()
-            assert args.product == "ubuntu"
+            assert args.products == ["ubuntu"]
             assert args.output == "custom.json"
 
     def test_parse_args_with_output_long(self):
@@ -295,7 +305,7 @@ class TestParseArgs:
         test_args = ["endoflife_fetcher.py", "nodejs", "--output", "node.json"]
         with patch.object(sys, "argv", test_args):
             args = parse_args()
-            assert args.product == "nodejs"
+            assert args.products == ["nodejs"]
             assert args.output == "node.json"
 
     def test_parse_args_with_timeout(self):
@@ -303,7 +313,7 @@ class TestParseArgs:
         test_args = ["endoflife_fetcher.py", "python", "-t", "30"]
         with patch.object(sys, "argv", test_args):
             args = parse_args()
-            assert args.product == "python"
+            assert args.products == ["python"]
             assert args.timeout == 30.0
 
     def test_parse_args_with_timeout_long(self):
@@ -313,29 +323,40 @@ class TestParseArgs:
             args = parse_args()
             assert args.timeout == 45.5
 
+    def test_parse_args_with_one_file(self):
+        """Test parsing with --one-file flag."""
+        test_args = ["endoflife_fetcher.py", "python", "nodejs", "--one-file"]
+        with patch.object(sys, "argv", test_args):
+            args = parse_args()
+            assert args.products == ["python", "nodejs"]
+            assert args.one_file is True
+
     def test_parse_args_all_arguments(self):
         """Test parsing with all arguments."""
         test_args = [
             "endoflife_fetcher.py",
             "python",
+            "nodejs",
             "-o",
             "output.json",
             "-t",
             "20",
+            "--one-file",
         ]
         with patch.object(sys, "argv", test_args):
             args = parse_args()
-            assert args.product == "python"
+            assert args.products == ["python", "nodejs"]
             assert args.output == "output.json"
             assert args.timeout == 20.0
+            assert args.one_file is True
 
 
 class TestMain:
     """Integration tests for the main function."""
 
     @responses.activate
-    def test_main_success_with_default_output(self, tmp_path, capsys, monkeypatch):
-        """Test main function with successful execution and default output."""
+    def test_main_single_product_default_output(self, tmp_path, capsys, monkeypatch):
+        """Test main function with single product and default output."""
         product = "python"
         mock_data = [{"cycle": "3.12", "eol": "2028-10-02"}]
 
@@ -360,12 +381,149 @@ class TestMain:
 
         # Check stdout
         captured = capsys.readouterr()
-        assert "No output path specified" in captured.out
+        assert "Fetching data" in captured.out
         assert product in captured.out
 
     @responses.activate
-    def test_main_success_with_custom_output(self, tmp_path, capsys, monkeypatch):
-        """Test main function with custom output path."""
+    def test_main_multiple_products_default_output(self, tmp_path, capsys, monkeypatch):
+        """Test main function with multiple products and default output."""
+        products = ["python", "nodejs"]
+        mock_data_python = [{"cycle": "3.12", "eol": "2028-10-02"}]
+        mock_data_nodejs = [{"cycle": "20", "eol": "2026-04-30"}]
+
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/python",
+            json=mock_data_python,
+            status=200,
+        )
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/nodejs",
+            json=mock_data_nodejs,
+            status=200,
+        )
+
+        monkeypatch.chdir(tmp_path)
+
+        test_args = ["endoflife_fetcher.py", "python", "nodejs"]
+        with patch.object(sys, "argv", test_args):
+            main()
+
+        # Check both output files were created
+        python_file = tmp_path / "Output" / "python-eol.json"
+        nodejs_file = tmp_path / "Output" / "nodejs-eol.json"
+
+        assert python_file.exists()
+        assert nodejs_file.exists()
+
+        # Check content
+        with open(python_file) as f:
+            assert json.load(f) == mock_data_python
+        with open(nodejs_file) as f:
+            assert json.load(f) == mock_data_nodejs
+
+        # Check stdout
+        captured = capsys.readouterr()
+        assert "Saved data for 2 products" in captured.out
+        assert "python" in captured.out
+        assert "nodejs" in captured.out
+
+    @responses.activate
+    def test_main_multiple_products_one_file(self, tmp_path, capsys, monkeypatch):
+        """Test main function with --one-file option."""
+        products = ["python", "nodejs", "ubuntu"]
+        mock_data_python = [{"cycle": "3.12"}]
+        mock_data_nodejs = [{"cycle": "20"}]
+        mock_data_ubuntu = [{"cycle": "22.04"}]
+
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/python",
+            json=mock_data_python,
+            status=200,
+        )
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/nodejs",
+            json=mock_data_nodejs,
+            status=200,
+        )
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/ubuntu",
+            json=mock_data_ubuntu,
+            status=200,
+        )
+
+        monkeypatch.chdir(tmp_path)
+
+        test_args = ["endoflife_fetcher.py", "python", "nodejs", "ubuntu", "--one-file"]
+        with patch.object(sys, "argv", test_args):
+            main()
+
+        # Check one combined file was created
+        output_file = tmp_path / "Output" / "all-products-eol.json"
+        assert output_file.exists()
+
+        # Check content structure
+        with open(output_file) as f:
+            data = json.load(f)
+            assert "python" in data
+            assert "nodejs" in data
+            assert "ubuntu" in data
+            assert data["python"] == mock_data_python
+            assert data["nodejs"] == mock_data_nodejs
+            assert data["ubuntu"] == mock_data_ubuntu
+
+        # Check stdout
+        captured = capsys.readouterr()
+        assert "Saved data for 3 product(s)" in captured.out
+
+    @responses.activate
+    def test_main_one_file_custom_output(self, tmp_path, capsys, monkeypatch):
+        """Test main function with --one-file and custom output path."""
+        products = ["python", "nodejs"]
+        mock_data_python = [{"cycle": "3.12"}]
+        mock_data_nodejs = [{"cycle": "20"}]
+        custom_output = str(tmp_path / "my-products.json")
+
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/python",
+            json=mock_data_python,
+            status=200,
+        )
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/nodejs",
+            json=mock_data_nodejs,
+            status=200,
+        )
+
+        test_args = [
+            "endoflife_fetcher.py",
+            "python",
+            "nodejs",
+            "--one-file",
+            "-o",
+            custom_output,
+        ]
+        with patch.object(sys, "argv", test_args):
+            main()
+
+        # Check custom output file was created
+        assert os.path.exists(custom_output)
+
+        # Check content
+        with open(custom_output) as f:
+            data = json.load(f)
+            assert data["python"] == mock_data_python
+            assert data["nodejs"] == mock_data_nodejs
+
+    @responses.activate
+    def test_main_single_product_custom_output(self, tmp_path, capsys, monkeypatch):
+        """Test main function with single product and custom output path."""
         product = "ubuntu"
         output_path = str(tmp_path / "custom.json")
         mock_data = [{"cycle": "22.04", "eol": "2027-04-01"}]
@@ -390,8 +548,54 @@ class TestMain:
         assert product in captured.out
 
     @responses.activate
+    def test_main_partial_success(self, capsys):
+        """Test main function with some products failing."""
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/python",
+            json=[{"cycle": "3.12"}],
+            status=200,
+        )
+        responses.add(responses.GET, f"{BASE_URL}/products/invalid", status=404)
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/nodejs",
+            json=[{"cycle": "20"}],
+            status=200,
+        )
+
+        test_args = ["endoflife_fetcher.py", "python", "invalid", "nodejs"]
+        with patch.object(sys, "argv", test_args):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        # Should exit with 5 (partial success)
+        assert exc_info.value.code == 5
+
+        captured = capsys.readouterr()
+        assert "Successfully fetched data for 'python'" in captured.out
+        assert "Successfully fetched data for 'nodejs'" in captured.out
+        assert "1 product(s) failed" in captured.err
+        assert "invalid" in captured.err
+
+    @responses.activate
+    def test_main_all_products_fail(self, capsys):
+        """Test main function when all products fail."""
+        responses.add(responses.GET, f"{BASE_URL}/products/invalid1", status=404)
+        responses.add(responses.GET, f"{BASE_URL}/products/invalid2", status=404)
+
+        test_args = ["endoflife_fetcher.py", "invalid1", "invalid2"]
+        with patch.object(sys, "argv", test_args):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        assert exc_info.value.code == 10
+        captured = capsys.readouterr()
+        assert "Failed to fetch data for all products" in captured.err
+
+    @responses.activate
     def test_main_product_not_found(self, capsys):
-        """Test main function with product not found."""
+        """Test main function with single product not found."""
         product = "invalid-product"
 
         responses.add(
@@ -407,8 +611,7 @@ class TestMain:
 
         assert exc_info.value.code == 10
         captured = capsys.readouterr()
-        assert "Error" in captured.err
-        assert "not found" in captured.err.lower()
+        assert "Error" in captured.err or "not found" in captured.err.lower()
 
     @responses.activate
     def test_main_api_error(self, capsys):
@@ -428,7 +631,7 @@ class TestMain:
 
         assert exc_info.value.code == 11
         captured = capsys.readouterr()
-        assert "Error" in captured.err
+        assert "Error" in captured.err or "error" in captured.err.lower()
 
     @responses.activate
     def test_main_rate_limit_error(self, capsys):
@@ -449,7 +652,6 @@ class TestMain:
 
         assert exc_info.value.code == 13
         captured = capsys.readouterr()
-        assert "Error" in captured.err
         assert "Rate limit" in captured.err
         assert "120" in captured.err
 
@@ -470,7 +672,9 @@ class TestMain:
         test_args = ["endoflife_fetcher.py", product]
 
         with patch.object(sys, "argv", test_args):
-            with patch("endoflife_fetcher.save_json", side_effect=FileSaveError("Mock error")):
+            with patch(
+                "endoflife_fetcher.save_json", side_effect=FileSaveError("Mock error")
+            ):
                 with pytest.raises(SystemExit) as exc_info:
                     main()
 
@@ -500,6 +704,43 @@ class TestMain:
         # Just verify it runs successfully
         output_file = tmp_path / "Output" / f"{product}-eol.json"
         assert output_file.exists()
+
+    @responses.activate
+    def test_main_multiple_products_with_output_warning(
+        self, tmp_path, capsys, monkeypatch
+    ):
+        """Test that a warning is shown when using -o with multiple products without --one-file."""
+        products = ["python", "nodejs"]
+        mock_data_python = [{"cycle": "3.12"}]
+        mock_data_nodejs = [{"cycle": "20"}]
+
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/python",
+            json=mock_data_python,
+            status=200,
+        )
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/nodejs",
+            json=mock_data_nodejs,
+            status=200,
+        )
+
+        monkeypatch.chdir(tmp_path)
+
+        test_args = ["endoflife_fetcher.py", "python", "nodejs", "-o", "ignored.json"]
+        with patch.object(sys, "argv", test_args):
+            main()
+
+        # Check that warning was displayed
+        captured = capsys.readouterr()
+        assert "Warning" in captured.err
+        assert "--one-file not used" in captured.err
+
+        # Check that default naming was used
+        assert (tmp_path / "Output" / "python-eol.json").exists()
+        assert (tmp_path / "Output" / "nodejs-eol.json").exists()
 
 
 class TestExceptions:

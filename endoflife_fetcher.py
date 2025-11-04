@@ -77,14 +77,14 @@ def fetch_product(product, timeout=15):
                 retry_seconds = int(retry_after)
                 raise RateLimitError(
                     f"Rate limit exceeded. Please retry after {retry_seconds} seconds.",
-                    retry_after=retry_seconds
+                    retry_after=retry_seconds,
                 )
             except ValueError:
                 # Retry-After might be a HTTP date instead of seconds
                 raise RateLimitError(
                     f"Rate limit exceeded. Retry-After: {retry_after}",
-                    retry_after=retry_after
-                )
+                    retry_after=retry_after,
+                ) from None
         else:
             raise RateLimitError(
                 "Rate limit exceeded. Please wait before making more requests."
@@ -132,15 +132,23 @@ def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
         description=(
-            "Fetch end-of-life data for a product from "
+            "Fetch end-of-life data for one or more products from "
             "endoflife.date API and save as JSON."
         )
     )
-    parser.add_argument("product", help="Product slug (e.g., python, ubuntu, nodejs)")
+    parser.add_argument(
+        "products",
+        nargs="+",
+        metavar="product",
+        help="Product slug(s) (e.g., python, ubuntu, nodejs)",
+    )
     parser.add_argument(
         "-o",
         "--output",
-        help="Output file path for JSON. If omitted, saves to Output/{product}.json",
+        help=(
+            "Output file path for JSON. If omitted, saves to Output/{product}-eol.json "
+            "for each product, or Output/all-products-eol.json with --one-file"
+        ),
     )
     parser.add_argument(
         "-t",
@@ -149,43 +157,119 @@ def parse_args():
         default=15.0,
         help="HTTP timeout in seconds (default: 15)",
     )
+    parser.add_argument(
+        "--one-file",
+        action="store_true",
+        help=(
+            "Save all products data in a single JSON file "
+            "(default: one file per product)"
+        ),
+    )
     return parser.parse_args()
 
 
 def main():
     """Main entry point for the script."""
     args = parse_args()
-    product = args.product
+    products = args.products
     output = args.output
+    one_file = args.one_file
 
-    # Fetch product data from API
+    # Storage for results
+    results = {}
+    errors = {}
+
+    # Fetch data for each product
+    for product in products:
+        try:
+            print(f"Fetching data for '{product}'...")
+            data = fetch_product(product, timeout=args.timeout)
+            results[product] = data
+            print(f"  ✓ Successfully fetched data for '{product}'")
+        except ProductNotFoundError as e:
+            error_msg = str(e)
+            errors[product] = {"type": "not_found", "message": error_msg}
+            print(f"  ✗ Error: {error_msg}", file=sys.stderr)
+        except RateLimitError as e:
+            error_msg = str(e)
+            errors[product] = {
+                "type": "rate_limit",
+                "message": error_msg,
+                "retry_after": e.retry_after,
+            }
+            print(f"  ✗ Error: {error_msg}", file=sys.stderr)
+            if e.retry_after:
+                print(
+                    f"    Hint: Wait {e.retry_after} seconds before retrying",
+                    file=sys.stderr,
+                )
+        except EOLDAPIError as e:
+            error_msg = str(e)
+            errors[product] = {"type": "api_error", "message": error_msg}
+            print(f"  ✗ Error: {error_msg}", file=sys.stderr)
+
+    # Check if we got any successful results
+    if not results:
+        print("\nError: Failed to fetch data for all products.", file=sys.stderr)
+        # Determine appropriate exit code based on errors
+        if any(e["type"] == "not_found" for e in errors.values()):
+            sys.exit(10)
+        elif any(e["type"] == "rate_limit" for e in errors.values()):
+            sys.exit(13)
+        else:
+            sys.exit(11)
+
+    # Save the results
     try:
-        data = fetch_product(product, timeout=args.timeout)
-    except ProductNotFoundError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(10)
-    except RateLimitError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        if e.retry_after:
-            print(f"Hint: Wait {e.retry_after} seconds before retrying", file=sys.stderr)
-        sys.exit(13)
-    except EOLDAPIError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(11)
+        if one_file:
+            # Save all products in one file
+            if not output:
+                output = os.path.join("Output", "all-products-eol.json")
+                print(f"\nNo output path specified, using default: {output}")
 
-    # Determine output path (CLI argument or default Output folder)
-    if not output:
-        output = os.path.join("Output", f"{product}-eol.json")
-        print(f"No output path specified, using default: {output}")
+            save_json(results, output)
+            print(f"\nSaved data for {len(results)} product(s) to: {output}")
+        else:
+            # Save each product in its own file
+            if output and len(products) > 1:
+                print(
+                    "\nWarning: --output specified with multiple products "
+                    "but --one-file not used. "
+                    "Using default naming pattern.",
+                    file=sys.stderr,
+                )
+                output = None
 
-    # Save data to file
-    try:
-        save_json(data, output)
+            saved_files = []
+            for product, data in results.items():
+                if output and len(products) == 1:
+                    # Use specified output path for single product
+                    file_path = output
+                else:
+                    # Use default naming pattern
+                    file_path = os.path.join("Output", f"{product}-eol.json")
+
+                save_json(data, file_path)
+                saved_files.append((product, file_path))
+
+            if len(saved_files) == 1:
+                print(f"\nSaved data for '{saved_files[0][0]}' to: {saved_files[0][1]}")
+            else:
+                print(f"\nSaved data for {len(saved_files)} products:")
+                for product, file_path in saved_files:
+                    print(f"  - {product}: {file_path}")
+
     except FileSaveError as e:
-        print(f"Error: {e}", file=sys.stderr)
+        print(f"\nError: {e}", file=sys.stderr)
         sys.exit(12)
 
-    print(f"Saved data for '{product}' to: {output}")
+    # Report on any errors
+    if errors:
+        print(f"\n{len(errors)} product(s) failed:", file=sys.stderr)
+        for product, error in errors.items():
+            print(f"  - {product}: {error['message']}", file=sys.stderr)
+        # Exit with partial success code (we got some data but not all)
+        sys.exit(5)
 
 
 if __name__ == "__main__":
