@@ -23,6 +23,14 @@ class ProductNotFoundError(EOLDAPIError):
     pass
 
 
+class RateLimitError(EOLDAPIError):
+    """Exception raised when rate limit is exceeded (HTTP 429)."""
+
+    def __init__(self, message, retry_after=None):
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
 class FileSaveError(Exception):
     """Exception raised when file saving fails."""
 
@@ -61,6 +69,26 @@ def fetch_product(product, timeout=15):
             f"Product '{product}' not found on endoflife.date. "
             f"Check {BASE_URL}/products for valid product names."
         )
+
+    if resp.status_code == 429:
+        retry_after = resp.headers.get("Retry-After")
+        if retry_after:
+            try:
+                retry_seconds = int(retry_after)
+                raise RateLimitError(
+                    f"Rate limit exceeded. Please retry after {retry_seconds} seconds.",
+                    retry_after=retry_seconds
+                )
+            except ValueError:
+                # Retry-After might be a HTTP date instead of seconds
+                raise RateLimitError(
+                    f"Rate limit exceeded. Retry-After: {retry_after}",
+                    retry_after=retry_after
+                )
+        else:
+            raise RateLimitError(
+                "Rate limit exceeded. Please wait before making more requests."
+            )
 
     if str(resp.status_code).startswith("5"):
         raise EOLDAPIError(f"Server error {resp.status_code} from endoflife.date.")
@@ -136,6 +164,11 @@ def main():
     except ProductNotFoundError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(10)
+    except RateLimitError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        if e.retry_after:
+            print(f"Hint: Wait {e.retry_after} seconds before retrying", file=sys.stderr)
+        sys.exit(13)
     except EOLDAPIError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(11)

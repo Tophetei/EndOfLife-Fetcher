@@ -20,6 +20,7 @@ from endoflife_fetcher import (
     EOLDAPIError,
     FileSaveError,
     ProductNotFoundError,
+    RateLimitError,
     fetch_product,
     main,
     parse_args,
@@ -107,6 +108,59 @@ class TestFetchProduct:
         assert "403" in str(exc_info.value)
 
     @responses.activate
+    def test_fetch_product_rate_limit_with_retry_after(self):
+        """Test rate limit error (429) with Retry-After header."""
+        product = "python"
+
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/{product}",
+            status=429,
+            headers={"Retry-After": "60"},
+        )
+
+        with pytest.raises(RateLimitError) as exc_info:
+            fetch_product(product)
+
+        assert "Rate limit exceeded" in str(exc_info.value)
+        assert exc_info.value.retry_after == 60
+
+    @responses.activate
+    def test_fetch_product_rate_limit_without_retry_after(self):
+        """Test rate limit error (429) without Retry-After header."""
+        product = "python"
+
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/{product}",
+            status=429,
+        )
+
+        with pytest.raises(RateLimitError) as exc_info:
+            fetch_product(product)
+
+        assert "Rate limit exceeded" in str(exc_info.value)
+        assert exc_info.value.retry_after is None
+
+    @responses.activate
+    def test_fetch_product_rate_limit_with_http_date(self):
+        """Test rate limit error (429) with HTTP date in Retry-After."""
+        product = "python"
+
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/{product}",
+            status=429,
+            headers={"Retry-After": "Wed, 21 Oct 2025 07:28:00 GMT"},
+        )
+
+        with pytest.raises(RateLimitError) as exc_info:
+            fetch_product(product)
+
+        assert "Rate limit exceeded" in str(exc_info.value)
+        assert exc_info.value.retry_after == "Wed, 21 Oct 2025 07:28:00 GMT"
+
+    @responses.activate
     def test_fetch_product_invalid_json(self):
         """Test invalid JSON response."""
         product = "python"
@@ -182,7 +236,7 @@ class TestSaveJson:
 
     def test_save_json_formatting(self, tmp_path):
         """Test JSON formatting (indentation, encoding)."""
-        test_data = {"name": "Python", "version": "3.12", "special": "café"}
+        test_data = {"name": "Python", "version": "3.12", "special": "cafÃ©"}
         output_file = tmp_path / "test.json"
 
         save_json(test_data, str(output_file))
@@ -192,8 +246,8 @@ class TestSaveJson:
 
         # Check indentation
         assert "  " in content
-        # Check UTF-8 encoding (café should be preserved)
-        assert "café" in content
+        # Check UTF-8 encoding (cafÃ© should be preserved)
+        assert "cafÃ©" in content
 
     def test_save_json_permission_error(self):
         """Test handling of permission errors."""
@@ -377,6 +431,29 @@ class TestMain:
         assert "Error" in captured.err
 
     @responses.activate
+    def test_main_rate_limit_error(self, capsys):
+        """Test main function with rate limit error."""
+        product = "python"
+
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/{product}",
+            status=429,
+            headers={"Retry-After": "120"},
+        )
+
+        test_args = ["endoflife_fetcher.py", product]
+        with patch.object(sys, "argv", test_args):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        assert exc_info.value.code == 13
+        captured = capsys.readouterr()
+        assert "Error" in captured.err
+        assert "Rate limit" in captured.err
+        assert "120" in captured.err
+
+    @responses.activate
     def test_main_file_save_error(self, capsys):
         """Test main function with file save error."""
         product = "python"
@@ -439,6 +516,20 @@ class TestExceptions:
         error = ProductNotFoundError("Product not found")
         assert isinstance(error, EOLDAPIError)
         assert isinstance(error, Exception)
+
+    def test_rate_limit_error_is_eoldapi_error(self):
+        """Test that RateLimitError inherits from EOLDAPIError."""
+        error = RateLimitError("Rate limit exceeded")
+        assert isinstance(error, EOLDAPIError)
+        assert isinstance(error, Exception)
+        assert error.retry_after is None
+
+    def test_rate_limit_error_with_retry_after(self):
+        """Test that RateLimitError stores retry_after value."""
+        error = RateLimitError("Rate limit exceeded", retry_after=60)
+        assert isinstance(error, EOLDAPIError)
+        assert error.retry_after == 60
+        assert "Rate limit exceeded" in str(error)
 
     def test_file_save_error_is_exception(self):
         """Test that FileSaveError is an Exception."""
