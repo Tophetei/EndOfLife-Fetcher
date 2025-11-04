@@ -89,9 +89,10 @@ The script generates a JSON file containing the product's lifecycle with informa
 
 The script handles errors properly with distinct exit codes:
 
-- `2`: Product not found (404)
-- `3`: API or network error
-- `5`: File writing error
+- `10`: Product not found (404)
+- `11`: API or network error
+- `12`: File writing error
+- `13`: Rate limit hit (429) - too many requests
 
 ## 🛠️ Architecture
 
