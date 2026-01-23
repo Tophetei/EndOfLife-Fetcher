@@ -233,11 +233,14 @@ To run the tests:
 # Install test dependencies
 pip install -r requirements-dev.txt
 
-# Run tests
-pytest test_endoflife_fetcher.py -v
+# Run all tests
+pytest tests/ -v
+
+# Run a specific test file
+pytest tests/test_fetch_product.py -v
 
 # With coverage
-pytest test_endoflife_fetcher.py --cov=endoflife_fetcher --cov-report=html
+pytest tests/ --cov=endoflife_fetcher --cov-report=html
 ```
 
 ## 💡 Practical examples
