@@ -64,3 +64,6 @@ Thumbs.db
 
 # Output directory
 Output/
+
+# Claude Code
+CLAUDE.md
