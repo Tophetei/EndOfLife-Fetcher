@@ -9,10 +9,14 @@ This script allows you to easily retrieve support and end-of-life information fo
 ## 🚀 Installation
 
 1. Clone or download this project
-2. Install dependencies:
+2. Install the package:
 
 ```bash
-pip install -r requirements.txt
+# Basic installation
+pip install -e .
+
+# With development dependencies (for testing)
+pip install -e ".[dev]"
 ```
 
 ## 💡 Usage
@@ -87,6 +91,16 @@ python endoflife_fetcher.py ubuntu -o data/ubuntu-versions.json
 python endoflife_fetcher.py python --timeout 30
 ```
 
+**Check for EOL products (CI/CD integration):**
+
+```bash
+# Fail if any product cycle is already past EOL
+python endoflife_fetcher.py python nodejs --check
+
+# Fail if any product cycle will be EOL within 90 days
+python endoflife_fetcher.py python nodejs --check --warn-days 90
+```
+
 ### Available products
 
 You can fetch info for many products, for example:
@@ -101,7 +115,7 @@ For the complete list: [endoflife.date/api/products](https://endoflife.date/api/
 ## 🎯 Options
 
 ```bash
-python endoflife_fetcher.py [-h] [-o OUTPUT] [-t TIMEOUT] [--one-file] product [product ...]
+python endoflife_fetcher.py [-h] [-o OUTPUT] [-t TIMEOUT] [--one-file] [--check] [--warn-days DAYS] product [product ...]
 
 Arguments:
   product              One or more product slugs (e.g., python, ubuntu, nodejs)
@@ -114,6 +128,10 @@ Options:
   -t, --timeout TIMEOUT  HTTP timeout in seconds (default: 15)
   --one-file           Save all products data in a single JSON file
                        (default: one file per product)
+  --check              Check if any product cycle is past EOL or within threshold.
+                       Exits with code 1 if EOL products are found.
+  --warn-days DAYS     Days threshold for EOL warning with --check.
+                       0 means only already-EOL products (default: 0)
 ```
 
 ## 📊 Output format
@@ -167,6 +185,7 @@ With the `--one-file` option, all products are grouped in a single file:
 The script handles errors properly with distinct exit codes:
 
 - `0`: Complete success (all products fetched successfully)
+- `1`: EOL check failed (with `--check`, products are past EOL or within threshold)
 - `5`: Partial success (some products succeeded, some failed)
 - `10`: Product not found (404)
 - `11`: API or network error
@@ -230,8 +249,8 @@ Easy to modify and extend according to your needs!
 To run the tests:
 
 ```bash
-# Install test dependencies
-pip install -r requirements-dev.txt
+# Install with dev dependencies
+pip install -e ".[dev]"
 
 # Run all tests
 pytest tests/ -v

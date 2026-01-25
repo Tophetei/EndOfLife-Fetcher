@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import sys
+from datetime import datetime, timedelta
 
 import requests
 
@@ -128,6 +129,64 @@ def save_json(data, path):
         raise FileSaveError(f"Failed to write file '{path}': {e}") from e
 
 
+def check_eol_status(results, warn_days=0):
+    """
+    Check which products have cycles that are EOL or within the warning threshold.
+
+    Args:
+        results: Dict of {product: [cycles]} from the API
+        warn_days: Number of days threshold for warning (0 = only already EOL)
+
+    Returns:
+        List of dicts with EOL information:
+        [{"product": str, "cycle": str, "eol": str, "days_until": int or None}]
+    """
+    eol_products = []
+    today = datetime.now().date()
+    threshold_date = today + timedelta(days=warn_days)
+
+    for product, cycles in results.items():
+        if not isinstance(cycles, list):
+            continue
+
+        for cycle in cycles:
+            if not isinstance(cycle, dict):
+                continue
+
+            eol_value = cycle.get("eol")
+            cycle_name = cycle.get("cycle", "unknown")
+
+            # Handle different eol value types
+            if eol_value is True:
+                # Already EOL (no specific date)
+                eol_products.append({
+                    "product": product,
+                    "cycle": cycle_name,
+                    "eol": "true (already EOL)",
+                    "days_until": None,
+                })
+            elif eol_value is False or eol_value is None:
+                # No EOL date set, skip
+                continue
+            elif isinstance(eol_value, str):
+                try:
+                    eol_date = datetime.strptime(eol_value, "%Y-%m-%d").date()
+                    days_until = (eol_date - today).days
+
+                    if eol_date <= threshold_date:
+                        eol_products.append({
+                            "product": product,
+                            "cycle": cycle_name,
+                            "eol": eol_value,
+                            "days_until": days_until,
+                        })
+                except ValueError:
+                    # Invalid date format, skip
+                    continue
+
+    return eol_products
+
+
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
@@ -163,6 +222,24 @@ def parse_args():
         help=(
             "Save all products data in a single JSON file "
             "(default: one file per product)"
+        ),
+    )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help=(
+            "Check if any product cycle is past EOL or within --warn-days threshold. "
+            "Exits with code 1 if EOL products are found."
+        ),
+    )
+    parser.add_argument(
+        "--warn-days",
+        type=int,
+        default=0,
+        metavar="DAYS",
+        help=(
+            "Days threshold for EOL warning with --check. "
+            "0 means only already-EOL products (default: 0)"
         ),
     )
     return parser.parse_args()
@@ -270,6 +347,26 @@ def main():
             print(f"  - {product}: {error['message']}", file=sys.stderr)
         # Exit with partial success code (we got some data but not all)
         sys.exit(5)
+
+    # Check EOL status if --check is enabled
+    if args.check:
+        eol_found = check_eol_status(results, args.warn_days)
+        if eol_found:
+            print("\n⚠ EOL Check Failed:", file=sys.stderr)
+            for item in eol_found:
+                if item["days_until"] is None:
+                    status = "already EOL"
+                elif item["days_until"] < 0:
+                    status = f"EOL {-item['days_until']} days ago"
+                elif item["days_until"] == 0:
+                    status = "EOL today"
+                else:
+                    status = f"EOL in {item['days_until']} days"
+                print(
+                    f"  - {item['product']} {item['cycle']}: {status} ({item['eol']})",
+                    file=sys.stderr,
+                )
+            sys.exit(1)
 
 
 if __name__ == "__main__":

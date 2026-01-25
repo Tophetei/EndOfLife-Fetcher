@@ -635,3 +635,209 @@ class TestMainFileSaveErrors:
         assert exc_info.value.code == 12
         captured = capsys.readouterr()
         assert "Disk full" in captured.err
+
+
+class TestMainCheckMode:
+    """Tests for --check mode (EOL checking)."""
+
+    @responses.activate
+    def test_check_no_eol_exits_0(self, tmp_path, monkeypatch):
+        """Test --check exits 0 when no products are EOL."""
+        # EOL date far in the future
+        mock_data = [{"cycle": "3.12", "eol": "2099-01-01"}]
+
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/python",
+            json=mock_data,
+            status=200,
+        )
+
+        monkeypatch.chdir(tmp_path)
+
+        test_args = ["endoflife_fetcher.py", "python", "--check"]
+        with patch.object(sys, "argv", test_args):
+            # Should not raise SystemExit
+            main()
+
+    @responses.activate
+    def test_check_eol_exits_1(self, tmp_path, capsys, monkeypatch):
+        """Test --check exits 1 when products are past EOL."""
+        # EOL date in the past
+        mock_data = [{"cycle": "2.7", "eol": "2020-01-01"}]
+
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/python",
+            json=mock_data,
+            status=200,
+        )
+
+        monkeypatch.chdir(tmp_path)
+
+        test_args = ["endoflife_fetcher.py", "python", "--check"]
+        with patch.object(sys, "argv", test_args):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "EOL Check Failed" in captured.err
+        assert "python" in captured.err
+        assert "2.7" in captured.err
+
+    @responses.activate
+    def test_check_eol_boolean_true(self, tmp_path, capsys, monkeypatch):
+        """Test --check detects eol: true (already EOL, no date)."""
+        mock_data = [{"cycle": "2.7", "eol": True}]
+
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/python",
+            json=mock_data,
+            status=200,
+        )
+
+        monkeypatch.chdir(tmp_path)
+
+        test_args = ["endoflife_fetcher.py", "python", "--check"]
+        with patch.object(sys, "argv", test_args):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "already EOL" in captured.err
+
+    @responses.activate
+    def test_check_with_warn_days(self, tmp_path, capsys, monkeypatch):
+        """Test --check with --warn-days threshold."""
+        from datetime import datetime, timedelta
+
+        # EOL date 30 days from now
+        future_date = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+        mock_data = [{"cycle": "18", "eol": future_date}]
+
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/nodejs",
+            json=mock_data,
+            status=200,
+        )
+
+        monkeypatch.chdir(tmp_path)
+
+        # With 60 day threshold, should catch it
+        test_args = ["endoflife_fetcher.py", "nodejs", "--check", "--warn-days", "60"]
+        with patch.object(sys, "argv", test_args):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "EOL in 30 days" in captured.err
+
+    @responses.activate
+    def test_check_eol_today(self, tmp_path, capsys, monkeypatch):
+        """Test --check shows 'EOL today' when EOL date is today."""
+        from datetime import datetime
+
+        # EOL date is today
+        today = datetime.now().strftime("%Y-%m-%d")
+        mock_data = [{"cycle": "16", "eol": today}]
+
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/nodejs",
+            json=mock_data,
+            status=200,
+        )
+
+        monkeypatch.chdir(tmp_path)
+
+        test_args = ["endoflife_fetcher.py", "nodejs", "--check"]
+        with patch.object(sys, "argv", test_args):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "EOL today" in captured.err
+
+    @responses.activate
+    def test_check_warn_days_not_triggered(self, tmp_path, monkeypatch):
+        """Test --check with --warn-days when product is outside threshold."""
+        from datetime import datetime, timedelta
+
+        # EOL date 90 days from now
+        future_date = (datetime.now() + timedelta(days=90)).strftime("%Y-%m-%d")
+        mock_data = [{"cycle": "20", "eol": future_date}]
+
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/nodejs",
+            json=mock_data,
+            status=200,
+        )
+
+        monkeypatch.chdir(tmp_path)
+
+        # With 30 day threshold, should NOT catch it
+        test_args = ["endoflife_fetcher.py", "nodejs", "--check", "--warn-days", "30"]
+        with patch.object(sys, "argv", test_args):
+            # Should not raise SystemExit
+            main()
+
+    @responses.activate
+    def test_check_multiple_products_mixed(self, tmp_path, capsys, monkeypatch):
+        """Test --check with multiple products, some EOL some not."""
+        mock_data_python = [
+            {"cycle": "2.7", "eol": "2020-01-01"},  # EOL
+            {"cycle": "3.12", "eol": "2099-01-01"},  # Not EOL
+        ]
+        mock_data_nodejs = [{"cycle": "20", "eol": "2099-01-01"}]  # Not EOL
+
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/python",
+            json=mock_data_python,
+            status=200,
+        )
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/nodejs",
+            json=mock_data_nodejs,
+            status=200,
+        )
+
+        monkeypatch.chdir(tmp_path)
+
+        test_args = ["endoflife_fetcher.py", "python", "nodejs", "--check"]
+        with patch.object(sys, "argv", test_args):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "python 2.7" in captured.err
+        # nodejs 20 should NOT be in the error output
+        assert "nodejs 20" not in captured.err
+
+    @responses.activate
+    def test_check_without_flag_ignores_eol(self, tmp_path, monkeypatch):
+        """Test that EOL products don't cause exit 1 without --check flag."""
+        mock_data = [{"cycle": "2.7", "eol": "2020-01-01"}]  # Past EOL
+
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/python",
+            json=mock_data,
+            status=200,
+        )
+
+        monkeypatch.chdir(tmp_path)
+
+        # Without --check, should succeed even with EOL product
+        test_args = ["endoflife_fetcher.py", "python"]
+        with patch.object(sys, "argv", test_args):
+            main()  # Should not raise
