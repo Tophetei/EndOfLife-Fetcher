@@ -23,25 +23,19 @@ class TestCheckEolBasic:
     def test_no_eol_products(self):
         """Test when no products are past EOL."""
         future_date = (datetime.now() + timedelta(days=365)).strftime("%Y-%m-%d")
-        results = {
-            "python": [{"name": "3.12", "isEol": False, "eolFrom": future_date}]
-        }
+        results = {"python": [{"name": "3.12", "isEol": False, "eolFrom": future_date}]}
         result = check_eol_status(results)
         assert result == []
 
     def test_is_eol_false_no_date(self):
         """Test when isEol is False and no eolFrom date."""
-        results = {
-            "python": [{"name": "3.12", "isEol": False}]
-        }
+        results = {"python": [{"name": "3.12", "isEol": False}]}
         result = check_eol_status(results)
         assert result == []
 
     def test_missing_eol_fields(self):
         """Test when both isEol and eolFrom are missing."""
-        results = {
-            "python": [{"name": "3.12"}]
-        }
+        results = {"python": [{"name": "3.12"}]}
         result = check_eol_status(results)
         assert result == []
 
@@ -52,9 +46,7 @@ class TestCheckEolPastEol:
     def test_is_eol_true_with_date(self):
         """Test when isEol is True with an eolFrom date."""
         past_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
-        results = {
-            "python": [{"name": "2.7", "isEol": True, "eolFrom": past_date}]
-        }
+        results = {"python": [{"name": "2.7", "isEol": True, "eolFrom": past_date}]}
         result = check_eol_status(results)
         assert len(result) == 1
         assert result[0]["product"] == "python"
@@ -63,9 +55,7 @@ class TestCheckEolPastEol:
 
     def test_is_eol_true_no_date(self):
         """Test when isEol is True but no eolFrom date."""
-        results = {
-            "python": [{"name": "2.7", "isEol": True}]
-        }
+        results = {"python": [{"name": "2.7", "isEol": True}]}
         result = check_eol_status(results)
         assert len(result) == 1
         assert result[0]["product"] == "python"
@@ -76,9 +66,7 @@ class TestCheckEolPastEol:
     def test_eol_date_in_past(self):
         """Test when EOL date is in the past and isEol is True."""
         past_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
-        results = {
-            "python": [{"name": "3.8", "isEol": True, "eolFrom": past_date}]
-        }
+        results = {"python": [{"name": "3.8", "isEol": True, "eolFrom": past_date}]}
         result = check_eol_status(results)
         assert len(result) == 1
         assert result[0]["product"] == "python"
@@ -88,9 +76,7 @@ class TestCheckEolPastEol:
     def test_eol_date_today(self):
         """Test when EOL date is today."""
         today = datetime.now().strftime("%Y-%m-%d")
-        results = {
-            "python": [{"name": "3.9", "isEol": True, "eolFrom": today}]
-        }
+        results = {"python": [{"name": "3.9", "isEol": True, "eolFrom": today}]}
         result = check_eol_status(results)
         assert len(result) == 1
         assert result[0]["days_until"] == 0
@@ -102,9 +88,7 @@ class TestCheckEolWarnDays:
     def test_within_warn_days_threshold(self):
         """Test product within warn-days threshold (not yet EOL)."""
         future_date = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
-        results = {
-            "nodejs": [{"name": "18", "isEol": False, "eolFrom": future_date}]
-        }
+        results = {"nodejs": [{"name": "18", "isEol": False, "eolFrom": future_date}]}
         # With 60 day threshold, 30 days out should be caught
         result = check_eol_status(results, warn_days=60)
         assert len(result) == 1
@@ -114,9 +98,7 @@ class TestCheckEolWarnDays:
     def test_outside_warn_days_threshold(self):
         """Test product outside warn-days threshold."""
         future_date = (datetime.now() + timedelta(days=90)).strftime("%Y-%m-%d")
-        results = {
-            "nodejs": [{"name": "20", "isEol": False, "eolFrom": future_date}]
-        }
+        results = {"nodejs": [{"name": "20", "isEol": False, "eolFrom": future_date}]}
         # With 30 day threshold, 90 days out should not be caught
         result = check_eol_status(results, warn_days=30)
         assert result == []
@@ -185,9 +167,7 @@ class TestCheckEolEdgeCases:
 
     def test_invalid_date_format_is_eol_true(self):
         """Test with invalid date format when isEol is True."""
-        results = {
-            "python": [{"name": "2.7", "isEol": True, "eolFrom": "not-a-date"}]
-        }
+        results = {"python": [{"name": "2.7", "isEol": True, "eolFrom": "not-a-date"}]}
         result = check_eol_status(results)
         # Should still be caught as EOL, just without a specific date
         assert len(result) == 1
@@ -197,9 +177,7 @@ class TestCheckEolEdgeCases:
     def test_missing_name_field(self):
         """Test with missing name field uses 'unknown'."""
         past_date = (datetime.now() - timedelta(days=10)).strftime("%Y-%m-%d")
-        results = {
-            "python": [{"isEol": True, "eolFrom": past_date}]
-        }
+        results = {"python": [{"isEol": True, "eolFrom": past_date}]}
         result = check_eol_status(results)
         assert len(result) == 1
         assert result[0]["cycle"] == "unknown"

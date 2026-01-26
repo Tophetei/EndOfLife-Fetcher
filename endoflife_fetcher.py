@@ -180,28 +180,34 @@ def check_eol_status(
                     try:
                         eol_date = datetime.strptime(eol_from, "%Y-%m-%d").date()
                         days_until = (eol_date - today).days
-                        eol_products.append({
-                            "product": product,
-                            "cycle": cycle_name,
-                            "eol": eol_from,
-                            "days_until": days_until,
-                        })
+                        eol_products.append(
+                            {
+                                "product": product,
+                                "cycle": cycle_name,
+                                "eol": eol_from,
+                                "days_until": days_until,
+                            }
+                        )
                     except ValueError:
                         # Invalid date format, still EOL but no date
-                        eol_products.append({
+                        eol_products.append(
+                            {
+                                "product": product,
+                                "cycle": cycle_name,
+                                "eol": "true (already EOL)",
+                                "days_until": None,
+                            }
+                        )
+                else:
+                    # EOL but no date provided
+                    eol_products.append(
+                        {
                             "product": product,
                             "cycle": cycle_name,
                             "eol": "true (already EOL)",
                             "days_until": None,
-                        })
-                else:
-                    # EOL but no date provided
-                    eol_products.append({
-                        "product": product,
-                        "cycle": cycle_name,
-                        "eol": "true (already EOL)",
-                        "days_until": None,
-                    })
+                        }
+                    )
             elif eol_from:
                 # Not yet EOL, but has a future EOL date - check threshold
                 try:
@@ -209,12 +215,14 @@ def check_eol_status(
                     days_until = (eol_date - today).days
 
                     if eol_date <= threshold_date:
-                        eol_products.append({
-                            "product": product,
-                            "cycle": cycle_name,
-                            "eol": eol_from,
-                            "days_until": days_until,
-                        })
+                        eol_products.append(
+                            {
+                                "product": product,
+                                "cycle": cycle_name,
+                                "eol": eol_from,
+                                "days_until": days_until,
+                            }
+                        )
                 except (ValueError, TypeError):
                     # Invalid date format or type, skip
                     continue

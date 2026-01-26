@@ -388,8 +388,13 @@ class TestMainPartialSuccess:
 
         monkeypatch.chdir(tmp_path)
 
-        test_args = ["endoflife_fetcher.py", "python",
-                     "invalid", "nodejs", "--one-file"]
+        test_args = [
+            "endoflife_fetcher.py",
+            "python",
+            "invalid",
+            "nodejs",
+            "--one-file",
+        ]
         with patch.object(sys, "argv", test_args):
             with pytest.raises(SystemExit) as exc_info:
                 main()
@@ -633,8 +638,9 @@ class TestMainFileSaveErrors:
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/nodejs",
-            json=make_v1_response([{"name": "20", "isEol": False,
-                                    "eolFrom": "2026-04-30"}]),
+            json=make_v1_response(
+                [{"name": "20", "isEol": False, "eolFrom": "2026-04-30"}]
+            ),
             status=200,
         )
 
