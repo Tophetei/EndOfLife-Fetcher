@@ -9,8 +9,6 @@ Uses v1 API field names:
 
 from datetime import datetime, timedelta
 
-import pytest
-
 from endoflife_fetcher import check_eol_status
 
 
@@ -209,7 +207,7 @@ class TestCheckEolEdgeCases:
     def test_non_list_releases(self):
         """Test with non-list releases value (defensive check)."""
         results = {
-            "python": "not a list"
+            "python": "not a list"  # type: ignore[dict-item]  # intentionally wrong type
         }
         result = check_eol_status(results)
         assert result == []
@@ -217,7 +215,10 @@ class TestCheckEolEdgeCases:
     def test_non_dict_release(self):
         """Test with non-dict release entry (defensive check)."""
         results = {
-            "python": ["not a dict", {"name": "3.12", "isEol": False}]
+            "python": [
+                "not a dict",  # type: ignore[list-item]  # intentionally wrong type
+                {"name": "3.12", "isEol": False},
+            ]
         }
         result = check_eol_status(results)
         assert result == []

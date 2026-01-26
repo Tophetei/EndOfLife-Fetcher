@@ -388,7 +388,8 @@ class TestMainPartialSuccess:
 
         monkeypatch.chdir(tmp_path)
 
-        test_args = ["endoflife_fetcher.py", "python", "invalid", "nodejs", "--one-file"]
+        test_args = ["endoflife_fetcher.py", "python",
+                     "invalid", "nodejs", "--one-file"]
         with patch.object(sys, "argv", test_args):
             with pytest.raises(SystemExit) as exc_info:
                 main()
@@ -477,7 +478,8 @@ class TestMainAllProductsFail:
 
     @responses.activate
     def test_all_fail_mixed_errors_priority(self, capsys):
-        """Test exit code priority: not_found (10) > rate_limit (13) > api_error (11)."""
+        """Test exit code priority:
+        not_found (10) > rate_limit (13) > api_error (11)."""
         # One 404, one 429 - should exit with 10 (not_found has priority)
         responses.add(
             responses.GET,
@@ -631,7 +633,8 @@ class TestMainFileSaveErrors:
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/nodejs",
-            json=make_v1_response([{"name": "20", "isEol": False, "eolFrom": "2026-04-30"}]),
+            json=make_v1_response([{"name": "20", "isEol": False,
+                                    "eolFrom": "2026-04-30"}]),
             status=200,
         )
 
