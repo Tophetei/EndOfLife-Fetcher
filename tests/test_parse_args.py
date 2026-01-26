@@ -103,3 +103,58 @@ class TestParseArgsCombined:
             assert args.output == "output.json"
             assert args.timeout == 20.0
             assert args.one_file is True
+
+
+class TestParseArgsCheck:
+    """Tests for --check and --warn-days argument parsing."""
+
+    def test_check_flag(self):
+        """Test parsing with --check flag."""
+        test_args = ["endoflife_fetcher.py", "python", "--check"]
+        with patch.object(sys, "argv", test_args):
+            args = parse_args()
+            assert args.check is True
+            assert args.warn_days == 0  # Default
+
+    def test_check_flag_default_false(self):
+        """Test that --check defaults to False."""
+        test_args = ["endoflife_fetcher.py", "python"]
+        with patch.object(sys, "argv", test_args):
+            args = parse_args()
+            assert args.check is False
+
+    def test_warn_days(self):
+        """Test parsing with --warn-days argument."""
+        test_args = ["endoflife_fetcher.py", "python", "--check", "--warn-days", "90"]
+        with patch.object(sys, "argv", test_args):
+            args = parse_args()
+            assert args.check is True
+            assert args.warn_days == 90
+
+    def test_warn_days_default(self):
+        """Test that --warn-days defaults to 0."""
+        test_args = ["endoflife_fetcher.py", "python"]
+        with patch.object(sys, "argv", test_args):
+            args = parse_args()
+            assert args.warn_days == 0
+
+    def test_all_arguments_with_check(self):
+        """Test parsing with all arguments including --check."""
+        test_args = [
+            "endoflife_fetcher.py",
+            "python",
+            "nodejs",
+            "-o",
+            "output.json",
+            "--one-file",
+            "--check",
+            "--warn-days",
+            "30",
+        ]
+        with patch.object(sys, "argv", test_args):
+            args = parse_args()
+            assert args.products == ["python", "nodejs"]
+            assert args.output == "output.json"
+            assert args.one_file is True
+            assert args.check is True
+            assert args.warn_days == 30

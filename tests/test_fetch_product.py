@@ -16,32 +16,37 @@ from endoflife_fetcher import (
 )
 
 
+def make_v1_response(releases):
+    """Helper to wrap releases in v1 API response structure."""
+    return {"result": {"releases": releases}}
+
+
 class TestFetchProductSuccess:
     """Tests for successful fetch_product calls."""
 
     @responses.activate
     def test_fetch_product_success(self):
-        """Test successful product fetch."""
+        """Test successful product fetch returns releases list."""
         product = "python"
-        mock_data = [
+        releases = [
             {
-                "cycle": "3.12",
+                "name": "3.12",
                 "releaseDate": "2023-10-02",
-                "eol": "2028-10-02",
-                "latest": "3.12.0",
-                "lts": False,
+                "isEol": False,
+                "eolFrom": "2028-10-31",
+                "isLts": False,
             }
         ]
 
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/{product}",
-            json=mock_data,
+            json=make_v1_response(releases),
             status=200,
         )
 
         result = fetch_product(product)
-        assert result == mock_data
+        assert result == releases
         assert len(responses.calls) == 1
         assert responses.calls[0].request.headers["Accept"] == "application/json"
 
@@ -49,32 +54,50 @@ class TestFetchProductSuccess:
     def test_fetch_product_custom_timeout(self):
         """Test custom timeout parameter."""
         product = "python"
-        mock_data = {"test": "data"}
+        releases = [{"name": "3.12", "isEol": False, "eolFrom": "2028-10-31"}]
 
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/{product}",
-            json=mock_data,
+            json=make_v1_response(releases),
             status=200,
         )
 
         result = fetch_product(product, timeout=30)
-        assert result == mock_data
+        assert result == releases
 
     @responses.activate
-    def test_fetch_product_empty_json_response(self):
-        """Test handling of empty but valid JSON responses."""
+    def test_fetch_product_empty_releases(self):
+        """Test handling of empty releases list."""
         product = "python"
 
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/{product}",
-            json=[],
+            json=make_v1_response([]),
             status=200,
         )
 
         result = fetch_product(product)
         assert result == []
+
+    @responses.activate
+    def test_fetch_product_invalid_structure(self):
+        """Test handling of unexpected API response structure."""
+        product = "python"
+
+        # Missing result.releases structure
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/{product}",
+            json={"unexpected": "structure"},
+            status=200,
+        )
+
+        with pytest.raises(EOLDAPIError) as exc_info:
+            fetch_product(product)
+
+        assert "Unexpected API response structure" in str(exc_info.value)
 
 
 class TestFetchProductHTTPErrors:
