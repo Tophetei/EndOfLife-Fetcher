@@ -1,5 +1,7 @@
 """
 Integration tests for the main function.
+
+Uses v1 API response structure.
 """
 
 import json
@@ -13,6 +15,11 @@ import responses
 from endoflife_fetcher import BASE_URL, FileSaveError, main
 
 
+def make_v1_response(releases):
+    """Helper to wrap releases in v1 API response structure."""
+    return {"result": {"releases": releases}}
+
+
 class TestMainSingleProduct:
     """Tests for main() with single product."""
 
@@ -20,12 +27,12 @@ class TestMainSingleProduct:
     def test_default_output(self, tmp_path, capsys, monkeypatch):
         """Test main function with single product and default output."""
         product = "python"
-        mock_data = [{"cycle": "3.12", "eol": "2028-10-02"}]
+        releases = [{"name": "3.12", "isEol": False, "eolFrom": "2028-10-31"}]
 
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/{product}",
-            json=mock_data,
+            json=make_v1_response(releases),
             status=200,
         )
 
@@ -47,12 +54,12 @@ class TestMainSingleProduct:
         """Test main function with single product and custom output path."""
         product = "ubuntu"
         output_path = str(tmp_path / "custom.json")
-        mock_data = [{"cycle": "22.04", "eol": "2027-04-01"}]
+        releases = [{"name": "22.04", "isEol": False, "eolFrom": "2027-04-01"}]
 
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/{product}",
-            json=mock_data,
+            json=make_v1_response(releases),
             status=200,
         )
 
@@ -70,12 +77,12 @@ class TestMainSingleProduct:
     def test_with_custom_timeout(self, tmp_path, monkeypatch):
         """Test main function with custom timeout."""
         product = "nodejs"
-        mock_data = [{"cycle": "20", "eol": "2026-04-30"}]
+        releases = [{"name": "20", "isEol": False, "eolFrom": "2026-04-30"}]
 
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/{product}",
-            json=mock_data,
+            json=make_v1_response(releases),
             status=200,
         )
 
@@ -95,19 +102,19 @@ class TestMainMultipleProducts:
     @responses.activate
     def test_default_output(self, tmp_path, capsys, monkeypatch):
         """Test main function with multiple products and default output."""
-        mock_data_python = [{"cycle": "3.12", "eol": "2028-10-02"}]
-        mock_data_nodejs = [{"cycle": "20", "eol": "2026-04-30"}]
+        releases_python = [{"name": "3.12", "isEol": False, "eolFrom": "2028-10-31"}]
+        releases_nodejs = [{"name": "20", "isEol": False, "eolFrom": "2026-04-30"}]
 
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/python",
-            json=mock_data_python,
+            json=make_v1_response(releases_python),
             status=200,
         )
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/nodejs",
-            json=mock_data_nodejs,
+            json=make_v1_response(releases_nodejs),
             status=200,
         )
 
@@ -124,9 +131,9 @@ class TestMainMultipleProducts:
         assert nodejs_file.exists()
 
         with open(python_file) as f:
-            assert json.load(f) == mock_data_python
+            assert json.load(f) == releases_python
         with open(nodejs_file) as f:
-            assert json.load(f) == mock_data_nodejs
+            assert json.load(f) == releases_nodejs
 
         captured = capsys.readouterr()
         assert "Saved data for 2 products" in captured.out
@@ -134,19 +141,19 @@ class TestMainMultipleProducts:
     @responses.activate
     def test_output_warning_without_one_file(self, tmp_path, capsys, monkeypatch):
         """Test warning when using -o with multiple products without --one-file."""
-        mock_data_python = [{"cycle": "3.12"}]
-        mock_data_nodejs = [{"cycle": "20"}]
+        releases_python = [{"name": "3.12", "isEol": False, "eolFrom": "2028-10-31"}]
+        releases_nodejs = [{"name": "20", "isEol": False, "eolFrom": "2026-04-30"}]
 
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/python",
-            json=mock_data_python,
+            json=make_v1_response(releases_python),
             status=200,
         )
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/nodejs",
-            json=mock_data_nodejs,
+            json=make_v1_response(releases_nodejs),
             status=200,
         )
 
@@ -167,18 +174,18 @@ class TestMainMultipleProducts:
     @responses.activate
     def test_duplicate_products(self, tmp_path, capsys, monkeypatch):
         """Test behavior when the same product is specified multiple times."""
-        mock_data = [{"cycle": "3.12", "eol": "2028-10-02"}]
+        releases = [{"name": "3.12", "isEol": False, "eolFrom": "2028-10-31"}]
 
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/python",
-            json=mock_data,
+            json=make_v1_response(releases),
             status=200,
         )
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/python",
-            json=mock_data,
+            json=make_v1_response(releases),
             status=200,
         )
 
@@ -205,26 +212,26 @@ class TestMainOneFileMode:
     @responses.activate
     def test_multiple_products_one_file(self, tmp_path, capsys, monkeypatch):
         """Test main function with --one-file option."""
-        mock_data_python = [{"cycle": "3.12"}]
-        mock_data_nodejs = [{"cycle": "20"}]
-        mock_data_ubuntu = [{"cycle": "22.04"}]
+        releases_python = [{"name": "3.12", "isEol": False, "eolFrom": "2028-10-31"}]
+        releases_nodejs = [{"name": "20", "isEol": False, "eolFrom": "2026-04-30"}]
+        releases_ubuntu = [{"name": "22.04", "isEol": False, "eolFrom": "2027-04-01"}]
 
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/python",
-            json=mock_data_python,
+            json=make_v1_response(releases_python),
             status=200,
         )
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/nodejs",
-            json=mock_data_nodejs,
+            json=make_v1_response(releases_nodejs),
             status=200,
         )
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/ubuntu",
-            json=mock_data_ubuntu,
+            json=make_v1_response(releases_ubuntu),
             status=200,
         )
 
@@ -242,9 +249,9 @@ class TestMainOneFileMode:
             assert "python" in data
             assert "nodejs" in data
             assert "ubuntu" in data
-            assert data["python"] == mock_data_python
-            assert data["nodejs"] == mock_data_nodejs
-            assert data["ubuntu"] == mock_data_ubuntu
+            assert data["python"] == releases_python
+            assert data["nodejs"] == releases_nodejs
+            assert data["ubuntu"] == releases_ubuntu
 
         captured = capsys.readouterr()
         assert "Saved data for 3 product(s)" in captured.out
@@ -252,20 +259,20 @@ class TestMainOneFileMode:
     @responses.activate
     def test_one_file_custom_output(self, tmp_path, capsys, monkeypatch):
         """Test main function with --one-file and custom output path."""
-        mock_data_python = [{"cycle": "3.12"}]
-        mock_data_nodejs = [{"cycle": "20"}]
+        releases_python = [{"name": "3.12", "isEol": False, "eolFrom": "2028-10-31"}]
+        releases_nodejs = [{"name": "20", "isEol": False, "eolFrom": "2026-04-30"}]
         custom_output = str(tmp_path / "my-products.json")
 
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/python",
-            json=mock_data_python,
+            json=make_v1_response(releases_python),
             status=200,
         )
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/nodejs",
-            json=mock_data_nodejs,
+            json=make_v1_response(releases_nodejs),
             status=200,
         )
 
@@ -284,19 +291,19 @@ class TestMainOneFileMode:
 
         with open(custom_output) as f:
             data = json.load(f)
-            assert data["python"] == mock_data_python
-            assert data["nodejs"] == mock_data_nodejs
+            assert data["python"] == releases_python
+            assert data["nodejs"] == releases_nodejs
 
     @responses.activate
     def test_single_product_one_file(self, tmp_path, capsys, monkeypatch):
         """Test single product with --one-file flag produces dict output."""
         product = "python"
-        mock_data = [{"cycle": "3.12", "eol": "2028-10-02"}]
+        releases = [{"name": "3.12", "isEol": False, "eolFrom": "2028-10-31"}]
 
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/{product}",
-            json=mock_data,
+            json=make_v1_response(releases),
             status=200,
         )
 
@@ -314,28 +321,33 @@ class TestMainOneFileMode:
             data = json.load(f)
             assert isinstance(data, dict)
             assert "python" in data
-            assert data["python"] == mock_data
+            assert data["python"] == releases
 
 
 class TestMainPartialSuccess:
     """Tests for partial success scenarios (some products fail)."""
 
     @responses.activate
-    def test_partial_success_per_file(self, capsys):
+    def test_partial_success_per_file(self, tmp_path, capsys, monkeypatch):
         """Test main function with some products failing (per-file mode)."""
+        releases_python = [{"name": "3.12", "isEol": False, "eolFrom": "2028-10-31"}]
+        releases_nodejs = [{"name": "20", "isEol": False, "eolFrom": "2026-04-30"}]
+
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/python",
-            json=[{"cycle": "3.12"}],
+            json=make_v1_response(releases_python),
             status=200,
         )
         responses.add(responses.GET, f"{BASE_URL}/products/invalid", status=404)
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/nodejs",
-            json=[{"cycle": "20"}],
+            json=make_v1_response(releases_nodejs),
             status=200,
         )
+
+        monkeypatch.chdir(tmp_path)
 
         test_args = ["endoflife_fetcher.py", "python", "invalid", "nodejs"]
         with patch.object(sys, "argv", test_args):
@@ -353,12 +365,13 @@ class TestMainPartialSuccess:
     @responses.activate
     def test_partial_success_one_file(self, tmp_path, capsys, monkeypatch):
         """Test partial success with --one-file mode."""
-        mock_data_python = [{"cycle": "3.12"}]
+        releases_python = [{"name": "3.12", "isEol": False, "eolFrom": "2028-10-31"}]
+        releases_nodejs = [{"name": "20", "isEol": False, "eolFrom": "2026-04-30"}]
 
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/python",
-            json=mock_data_python,
+            json=make_v1_response(releases_python),
             status=200,
         )
         responses.add(
@@ -369,7 +382,7 @@ class TestMainPartialSuccess:
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/nodejs",
-            json=[{"cycle": "20"}],
+            json=make_v1_response(releases_nodejs),
             status=200,
         )
 
@@ -582,12 +595,12 @@ class TestMainFileSaveErrors:
     def test_file_save_error_per_file(self, capsys):
         """Test main function with file save error in per-file mode."""
         product = "python"
-        mock_data = [{"cycle": "3.12"}]
+        releases = [{"name": "3.12", "isEol": False, "eolFrom": "2028-10-31"}]
 
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/{product}",
-            json=mock_data,
+            json=make_v1_response(releases),
             status=200,
         )
 
@@ -607,18 +620,18 @@ class TestMainFileSaveErrors:
     @responses.activate
     def test_file_save_error_one_file_mode(self, capsys):
         """Test file save error specifically in --one-file mode."""
-        mock_data = [{"cycle": "3.12"}]
+        releases = [{"name": "3.12", "isEol": False, "eolFrom": "2028-10-31"}]
 
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/python",
-            json=mock_data,
+            json=make_v1_response(releases),
             status=200,
         )
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/nodejs",
-            json=[{"cycle": "20"}],
+            json=make_v1_response([{"name": "20", "isEol": False, "eolFrom": "2026-04-30"}]),
             status=200,
         )
 
@@ -643,13 +656,12 @@ class TestMainCheckMode:
     @responses.activate
     def test_check_no_eol_exits_0(self, tmp_path, monkeypatch):
         """Test --check exits 0 when no products are EOL."""
-        # EOL date far in the future
-        mock_data = [{"cycle": "3.12", "eol": "2099-01-01"}]
+        releases = [{"name": "3.12", "isEol": False, "eolFrom": "2099-01-01"}]
 
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/python",
-            json=mock_data,
+            json=make_v1_response(releases),
             status=200,
         )
 
@@ -663,13 +675,12 @@ class TestMainCheckMode:
     @responses.activate
     def test_check_eol_exits_1(self, tmp_path, capsys, monkeypatch):
         """Test --check exits 1 when products are past EOL."""
-        # EOL date in the past
-        mock_data = [{"cycle": "2.7", "eol": "2020-01-01"}]
+        releases = [{"name": "2.7", "isEol": True, "eolFrom": "2020-01-01"}]
 
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/python",
-            json=mock_data,
+            json=make_v1_response(releases),
             status=200,
         )
 
@@ -687,14 +698,38 @@ class TestMainCheckMode:
         assert "2.7" in captured.err
 
     @responses.activate
-    def test_check_eol_boolean_true(self, tmp_path, capsys, monkeypatch):
-        """Test --check detects eol: true (already EOL, no date)."""
-        mock_data = [{"cycle": "2.7", "eol": True}]
+    def test_check_eol_is_eol_true(self, tmp_path, capsys, monkeypatch):
+        """Test --check detects isEol: true."""
+        releases = [{"name": "2.7", "isEol": True, "eolFrom": "2020-01-01"}]
 
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/python",
-            json=mock_data,
+            json=make_v1_response(releases),
+            status=200,
+        )
+
+        monkeypatch.chdir(tmp_path)
+
+        test_args = ["endoflife_fetcher.py", "python", "--check"]
+        with patch.object(sys, "argv", test_args):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "EOL" in captured.err
+
+    @responses.activate
+    def test_check_eol_no_date(self, tmp_path, capsys, monkeypatch):
+        """Test --check shows 'already EOL' when isEol is True but no eolFrom date."""
+        # isEol: True without eolFrom results in days_until: None
+        releases = [{"name": "2.7", "isEol": True}]
+
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/python",
+            json=make_v1_response(releases),
             status=200,
         )
 
@@ -708,6 +743,7 @@ class TestMainCheckMode:
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
         assert "already EOL" in captured.err
+        assert "python 2.7" in captured.err
 
     @responses.activate
     def test_check_with_warn_days(self, tmp_path, capsys, monkeypatch):
@@ -716,12 +752,12 @@ class TestMainCheckMode:
 
         # EOL date 30 days from now
         future_date = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
-        mock_data = [{"cycle": "18", "eol": future_date}]
+        releases = [{"name": "18", "isEol": False, "eolFrom": future_date}]
 
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/nodejs",
-            json=mock_data,
+            json=make_v1_response(releases),
             status=200,
         )
 
@@ -744,12 +780,12 @@ class TestMainCheckMode:
 
         # EOL date is today
         today = datetime.now().strftime("%Y-%m-%d")
-        mock_data = [{"cycle": "16", "eol": today}]
+        releases = [{"name": "16", "isEol": True, "eolFrom": today}]
 
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/nodejs",
-            json=mock_data,
+            json=make_v1_response(releases),
             status=200,
         )
 
@@ -771,12 +807,12 @@ class TestMainCheckMode:
 
         # EOL date 90 days from now
         future_date = (datetime.now() + timedelta(days=90)).strftime("%Y-%m-%d")
-        mock_data = [{"cycle": "20", "eol": future_date}]
+        releases = [{"name": "20", "isEol": False, "eolFrom": future_date}]
 
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/nodejs",
-            json=mock_data,
+            json=make_v1_response(releases),
             status=200,
         )
 
@@ -791,22 +827,22 @@ class TestMainCheckMode:
     @responses.activate
     def test_check_multiple_products_mixed(self, tmp_path, capsys, monkeypatch):
         """Test --check with multiple products, some EOL some not."""
-        mock_data_python = [
-            {"cycle": "2.7", "eol": "2020-01-01"},  # EOL
-            {"cycle": "3.12", "eol": "2099-01-01"},  # Not EOL
+        releases_python = [
+            {"name": "2.7", "isEol": True, "eolFrom": "2020-01-01"},  # EOL
+            {"name": "3.12", "isEol": False, "eolFrom": "2099-01-01"},  # Not EOL
         ]
-        mock_data_nodejs = [{"cycle": "20", "eol": "2099-01-01"}]  # Not EOL
+        releases_nodejs = [{"name": "20", "isEol": False, "eolFrom": "2099-01-01"}]
 
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/python",
-            json=mock_data_python,
+            json=make_v1_response(releases_python),
             status=200,
         )
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/nodejs",
-            json=mock_data_nodejs,
+            json=make_v1_response(releases_nodejs),
             status=200,
         )
 
@@ -826,12 +862,12 @@ class TestMainCheckMode:
     @responses.activate
     def test_check_without_flag_ignores_eol(self, tmp_path, monkeypatch):
         """Test that EOL products don't cause exit 1 without --check flag."""
-        mock_data = [{"cycle": "2.7", "eol": "2020-01-01"}]  # Past EOL
+        releases = [{"name": "2.7", "isEol": True, "eolFrom": "2020-01-01"}]
 
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/python",
-            json=mock_data,
+            json=make_v1_response(releases),
             status=200,
         )
 

@@ -3,11 +3,16 @@
 Fetch end-of-life data for products from endoflife.date API and save as JSON.
 """
 
+from __future__ import annotations
+
+__version__ = "1.0.0"
+
 import argparse
 import json
 import os
 import sys
 from datetime import datetime, timedelta
+from typing import Any
 
 import requests
 
@@ -27,7 +32,7 @@ class ProductNotFoundError(EOLDAPIError):
 class RateLimitError(EOLDAPIError):
     """Exception raised when rate limit is exceeded (HTTP 429)."""
 
-    def __init__(self, message, retry_after=None):
+    def __init__(self, message: str, retry_after: int | str | None = None) -> None:
         super().__init__(message)
         self.retry_after = retry_after
 
@@ -41,7 +46,7 @@ class FileSaveError(Exception):
 BASE_URL = "https://endoflife.date/api/v1"
 
 
-def fetch_product(product, timeout=15):
+def fetch_product(product: str, timeout: float = 15) -> list[dict[str, Any]]:
     """
     Fetch end-of-life data for a specific product.
 
@@ -50,7 +55,7 @@ def fetch_product(product, timeout=15):
         timeout: HTTP request timeout in seconds
 
     Returns:
-        dict: JSON response from the API
+        List of release dicts from the API
 
     Raises:
         ProductNotFoundError: If the product is not found (404)
@@ -102,10 +107,18 @@ def fetch_product(product, timeout=15):
     except ValueError as e:
         raise EOLDAPIError(f"Invalid JSON received from API: {e}") from e
 
-    return data
+    # Extract releases from v1 API response structure
+    try:
+        releases = data["result"]["releases"]
+    except (KeyError, TypeError) as e:
+        raise EOLDAPIError(
+            f"Unexpected API response structure for '{product}': {e}"
+        ) from e
+
+    return releases
 
 
-def save_json(data, path):
+def save_json(data: Any, path: str) -> None:
     """
     Save data as JSON to the specified file path.
 
@@ -129,12 +142,14 @@ def save_json(data, path):
         raise FileSaveError(f"Failed to write file '{path}': {e}") from e
 
 
-def check_eol_status(results, warn_days=0):
+def check_eol_status(
+    results: dict[str, list[dict[str, Any]]], warn_days: int = 0
+) -> list[dict[str, Any]]:
     """
-    Check which products have cycles that are EOL or within the warning threshold.
+    Check which products have releases that are EOL or within the warning threshold.
 
     Args:
-        results: Dict of {product: [cycles]} from the API
+        results: Dict of {product: [releases]} from the v1 API
         warn_days: Number of days threshold for warning (0 = only already EOL)
 
     Returns:
@@ -145,55 +160,81 @@ def check_eol_status(results, warn_days=0):
     today = datetime.now().date()
     threshold_date = today + timedelta(days=warn_days)
 
-    for product, cycles in results.items():
-        if not isinstance(cycles, list):
+    for product, releases in results.items():
+        if not isinstance(releases, list):
             continue
 
-        for cycle in cycles:
-            if not isinstance(cycle, dict):
+        for release in releases:
+            if not isinstance(release, dict):
                 continue
 
-            eol_value = cycle.get("eol")
-            cycle_name = cycle.get("cycle", "unknown")
+            # v1 API uses "name" for cycle/version name
+            cycle_name = release.get("name", "unknown")
+            # v1 API uses "isEol" (bool) and "eolFrom" (date string)
+            is_eol = release.get("isEol", False)
+            eol_from = release.get("eolFrom")
 
-            # Handle different eol value types
-            if eol_value is True:
-                # Already EOL (no specific date)
-                eol_products.append({
-                    "product": product,
-                    "cycle": cycle_name,
-                    "eol": "true (already EOL)",
-                    "days_until": None,
-                })
-            elif eol_value is False or eol_value is None:
-                # No EOL date set, skip
-                continue
-            elif isinstance(eol_value, str):
+            if is_eol:
+                # Already past EOL
+                if eol_from:
+                    try:
+                        eol_date = datetime.strptime(eol_from, "%Y-%m-%d").date()
+                        days_until = (eol_date - today).days
+                        eol_products.append({
+                            "product": product,
+                            "cycle": cycle_name,
+                            "eol": eol_from,
+                            "days_until": days_until,
+                        })
+                    except ValueError:
+                        # Invalid date format, still EOL but no date
+                        eol_products.append({
+                            "product": product,
+                            "cycle": cycle_name,
+                            "eol": "true (already EOL)",
+                            "days_until": None,
+                        })
+                else:
+                    # EOL but no date provided
+                    eol_products.append({
+                        "product": product,
+                        "cycle": cycle_name,
+                        "eol": "true (already EOL)",
+                        "days_until": None,
+                    })
+            elif eol_from:
+                # Not yet EOL, but has a future EOL date - check threshold
                 try:
-                    eol_date = datetime.strptime(eol_value, "%Y-%m-%d").date()
+                    eol_date = datetime.strptime(eol_from, "%Y-%m-%d").date()
                     days_until = (eol_date - today).days
 
                     if eol_date <= threshold_date:
                         eol_products.append({
                             "product": product,
                             "cycle": cycle_name,
-                            "eol": eol_value,
+                            "eol": eol_from,
                             "days_until": days_until,
                         })
-                except ValueError:
-                    # Invalid date format, skip
+                except (ValueError, TypeError):
+                    # Invalid date format or type, skip
                     continue
 
     return eol_products
 
 
-def parse_args():
+def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
         description=(
             "Fetch end-of-life data for one or more products from "
             "endoflife.date API and save as JSON."
         )
+    )
+    parser.add_argument(
+        "-V",
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
     parser.add_argument(
         "products",
@@ -245,7 +286,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def main():
+def main() -> None:
     """Main entry point for the script."""
     args = parse_args()
     products = args.products
