@@ -40,6 +40,7 @@ dev = [
     "pytest-mock>=3.12.0",
     "responses>=0.23.0",
     "ruff",
+    "pre-commit>=3.5.0",
 ]
 
 [project.scripts]
