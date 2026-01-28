@@ -20,6 +20,85 @@ def make_v1_response(releases):
     return {"result": {"releases": releases}}
 
 
+def make_products_list_response(products):
+    """Helper to wrap products in v1 API response structure."""
+    return {
+        "total": len(products),
+        "result": [{"name": p, "label": p.title()} for p in products],
+    }
+
+
+class TestMainListProducts:
+    """Tests for main() with --list-products."""
+
+    @responses.activate
+    def test_list_products_outputs_names(self, capsys):
+        """Test --list-products prints one product per line."""
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products",
+            json=make_products_list_response(["python", "nodejs", "ubuntu"]),
+            status=200,
+        )
+
+        test_args = ["endoflife_fetcher.py", "--list-products"]
+        with patch.object(sys, "argv", test_args):
+            main()
+
+        captured = capsys.readouterr()
+        lines = captured.out.strip().splitlines()
+        # Remove "Fetching products list..." info message
+        product_lines = [line for line in lines if not line.startswith("Fetching")]
+        assert product_lines == ["python", "nodejs", "ubuntu"]
+
+    @responses.activate
+    def test_list_products_quiet_mode(self, capsys):
+        """Test --list-products with -q suppresses info message."""
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products",
+            json=make_products_list_response(["python", "nodejs"]),
+            status=200,
+        )
+
+        test_args = ["endoflife_fetcher.py", "--list-products", "-q"]
+        with patch.object(sys, "argv", test_args):
+            main()
+
+        captured = capsys.readouterr()
+        # Should only have product names, no "Fetching..." message
+        assert captured.out == "python\nnodejs\n"
+
+    @responses.activate
+    def test_list_products_api_error(self, capsys):
+        """Test --list-products with API error exits with code 11."""
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products",
+            status=500,
+        )
+
+        test_args = ["endoflife_fetcher.py", "--list-products"]
+        with patch.object(sys, "argv", test_args):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        assert exc_info.value.code == 11
+        captured = capsys.readouterr()
+        assert "[ERROR]" in captured.err
+
+    def test_no_products_no_list_products(self, capsys):
+        """Test error when no products and no --list-products."""
+        test_args = ["endoflife_fetcher.py"]
+        with patch.object(sys, "argv", test_args):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "--list-products" in captured.err
+
+
 class TestMainSingleProduct:
     """Tests for main() with single product."""
 
@@ -431,7 +510,9 @@ class TestMainAllProductsFail:
 
         assert exc_info.value.code == 10
         captured = capsys.readouterr()
-        assert "Failed to fetch data for all products" in captured.err
+        assert "[ERROR]" in captured.err
+        # Help message should appear once
+        assert "--list-products" in captured.err
 
     @responses.activate
     def test_all_fail_rate_limit(self, capsys):
@@ -456,7 +537,7 @@ class TestMainAllProductsFail:
 
         assert exc_info.value.code == 13
         captured = capsys.readouterr()
-        assert "Failed to fetch data for all products" in captured.err
+        assert "Rate limit" in captured.err
 
     @responses.activate
     def test_all_fail_api_error(self, capsys):
@@ -479,7 +560,7 @@ class TestMainAllProductsFail:
 
         assert exc_info.value.code == 11
         captured = capsys.readouterr()
-        assert "Failed to fetch data for all products" in captured.err
+        assert "Server error" in captured.err
 
     @responses.activate
     def test_all_fail_mixed_errors_priority(self, capsys):

@@ -71,10 +71,7 @@ def fetch_product(product: str, timeout: float = 15) -> list[dict[str, Any]]:
         raise EOLDAPIError(f"Network or API error while requesting {url}: {e}") from e
 
     if resp.status_code == 404:
-        raise ProductNotFoundError(
-            f"Product '{product}' not found on endoflife.date. "
-            f"Check {BASE_URL}/products for valid product names."
-        )
+        raise ProductNotFoundError(f"Product '{product}' not found on endoflife.date.")
 
     if resp.status_code == 429:
         retry_after = resp.headers.get("Retry-After")
@@ -116,6 +113,54 @@ def fetch_product(product: str, timeout: float = 15) -> list[dict[str, Any]]:
         ) from e
 
     return releases
+
+
+def fetch_products_list(timeout: float = 15) -> list[str]:
+    """
+    Fetch list of all available product names from the API.
+
+    Args:
+        timeout: HTTP request timeout in seconds
+
+    Returns:
+        List of product slugs (e.g., ['python', 'nodejs', 'ubuntu', ...])
+
+    Raises:
+        EOLDAPIError: For network errors, server errors, or invalid responses
+    """
+    url = f"{BASE_URL}/products"
+
+    try:
+        resp = requests.get(
+            url, timeout=timeout, headers={"Accept": "application/json"}
+        )
+    except requests.exceptions.RequestException as e:
+        raise EOLDAPIError(f"Network or API error while requesting {url}: {e}") from e
+
+    if resp.status_code == 429:
+        retry_after = resp.headers.get("Retry-After")
+        raise RateLimitError(
+            "Rate limit exceeded. Please wait before making more requests.",
+            retry_after=retry_after,
+        )
+
+    if str(resp.status_code).startswith("5"):
+        raise EOLDAPIError(f"Server error {resp.status_code} from endoflife.date.")
+
+    if not resp.ok:
+        raise EOLDAPIError(f"HTTP {resp.status_code} error from endoflife.date.")
+
+    try:
+        data = resp.json()
+    except ValueError as e:
+        raise EOLDAPIError(f"Invalid JSON received from API: {e}") from e
+
+    try:
+        products = [product["name"] for product in data["result"]]
+    except (KeyError, TypeError) as e:
+        raise EOLDAPIError(f"Unexpected API response structure: {e}") from e
+
+    return products
 
 
 def save_json(data: Any, path: str) -> None:
@@ -246,9 +291,14 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "products",
-        nargs="+",
+        nargs="*",
         metavar="product",
         help="Product slug(s) (e.g., python, ubuntu, nodejs)",
+    )
+    parser.add_argument(
+        "--list-products",
+        action="store_true",
+        help="List all available products from endoflife.date and exit",
     )
     parser.add_argument(
         "-o",
@@ -312,6 +362,27 @@ def main() -> None:
         if not args.quiet:
             print(msg)
 
+    # Handle --list-products
+    if args.list_products:
+        try:
+            info("Fetching products list...")
+            products_list = fetch_products_list(timeout=args.timeout)
+            for product in products_list:
+                print(product)
+        except EOLDAPIError as e:
+            print(f"[ERROR] {e}", file=sys.stderr)
+            sys.exit(11)
+        return
+
+    # Validate that products were specified
+    if not products:
+        print(
+            "[ERROR] No products specified. "
+            "Use --list-products to see available products.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     # Storage for results
     results = {}
     errors = {}
@@ -347,9 +418,14 @@ def main() -> None:
 
     # Check if we got any successful results
     if not results:
-        print("\nError: Failed to fetch data for all products.", file=sys.stderr)
-        # Determine appropriate exit code based on errors
-        if any(e["type"] == "not_found" for e in errors.values()):
+        has_not_found = any(e["type"] == "not_found" for e in errors.values())
+        if has_not_found:
+            print(
+                "\nCheck available products at https://endoflife.date/ "
+                "or run: endoflife-fetcher --list-products",
+                file=sys.stderr,
+            )
+        if has_not_found:
             sys.exit(10)
         elif any(e["type"] == "rate_limit" for e in errors.values()):
             sys.exit(13)
@@ -402,9 +478,14 @@ def main() -> None:
 
     # Report on any errors
     if errors:
-        print(f"\n{len(errors)} product(s) failed:", file=sys.stderr)
-        for product, error in errors.items():
-            print(f"  - {product}: {error['message']}", file=sys.stderr)
+        failed_names = ", ".join(errors.keys())
+        print(f"\n{len(errors)} product(s) failed: {failed_names}", file=sys.stderr)
+        if any(e["type"] == "not_found" for e in errors.values()):
+            print(
+                "Check available products at https://endoflife.date/ "
+                "or run: endoflife-fetcher --list-products",
+                file=sys.stderr,
+            )
         # Exit with partial success code (we got some data but not all)
         sys.exit(5)
 
