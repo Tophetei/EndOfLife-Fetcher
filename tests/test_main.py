@@ -659,6 +659,115 @@ class TestMainFileSaveErrors:
         assert "Disk full" in captured.err
 
 
+class TestMainQuietMode:
+    """Tests for --quiet / -q mode."""
+
+    @responses.activate
+    def test_quiet_mode_suppresses_output(self, tmp_path, capsys, monkeypatch):
+        """Test that --quiet suppresses progress output on stdout."""
+        releases = [{"name": "3.12", "isEol": False, "eolFrom": "2028-10-31"}]
+
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/python",
+            json=make_v1_response(releases),
+            status=200,
+        )
+
+        monkeypatch.chdir(tmp_path)
+
+        test_args = ["endoflife_fetcher.py", "python", "-q"]
+        with patch.object(sys, "argv", test_args):
+            main()
+
+        captured = capsys.readouterr()
+        # stdout should be empty in quiet mode
+        assert captured.out == ""
+        # File should still be created
+        assert (tmp_path / "Output" / "python-eol.json").exists()
+
+    @responses.activate
+    def test_quiet_mode_shows_errors(self, capsys):
+        """Test that --quiet still shows errors on stderr."""
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/invalid",
+            status=404,
+        )
+
+        test_args = ["endoflife_fetcher.py", "invalid", "-q"]
+        with patch.object(sys, "argv", test_args):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        assert exc_info.value.code == 10
+        captured = capsys.readouterr()
+        # stdout should be empty
+        assert captured.out == ""
+        # stderr should contain error message
+        assert "[ERROR]" in captured.err
+        assert "invalid" in captured.err
+
+    @responses.activate
+    def test_quiet_mode_with_check(self, tmp_path, capsys, monkeypatch):
+        """Test that --quiet with --check still shows EOL warnings on stderr."""
+        releases = [{"name": "2.7", "isEol": True, "eolFrom": "2020-01-01"}]
+
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/python",
+            json=make_v1_response(releases),
+            status=200,
+        )
+
+        monkeypatch.chdir(tmp_path)
+
+        test_args = ["endoflife_fetcher.py", "python", "-q", "--check"]
+        with patch.object(sys, "argv", test_args):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        # stdout should be empty
+        assert captured.out == ""
+        # stderr should contain EOL warning
+        assert "[WARNING]" in captured.err
+        assert "EOL Check Failed" in captured.err
+        assert "python 2.7" in captured.err
+
+    @responses.activate
+    def test_quiet_mode_multiple_products(self, tmp_path, capsys, monkeypatch):
+        """Test --quiet with multiple products - no output on success."""
+        releases_python = [{"name": "3.12", "isEol": False, "eolFrom": "2028-10-31"}]
+        releases_nodejs = [{"name": "20", "isEol": False, "eolFrom": "2026-04-30"}]
+
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/python",
+            json=make_v1_response(releases_python),
+            status=200,
+        )
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/nodejs",
+            json=make_v1_response(releases_nodejs),
+            status=200,
+        )
+
+        monkeypatch.chdir(tmp_path)
+
+        test_args = ["endoflife_fetcher.py", "python", "nodejs", "--quiet"]
+        with patch.object(sys, "argv", test_args):
+            main()
+
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        # Both files created
+        assert (tmp_path / "Output" / "python-eol.json").exists()
+        assert (tmp_path / "Output" / "nodejs-eol.json").exists()
+
+
 class TestMainCheckMode:
     """Tests for --check mode (EOL checking)."""
 
