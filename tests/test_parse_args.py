@@ -105,6 +105,31 @@ class TestParseArgsCombined:
             assert args.one_file is True
 
 
+class TestParseArgsQuiet:
+    """Tests for --quiet / -q argument parsing."""
+
+    def test_quiet_short_flag(self):
+        """Test parsing with -q flag."""
+        test_args = ["endoflife_fetcher.py", "python", "-q"]
+        with patch.object(sys, "argv", test_args):
+            args = parse_args()
+            assert args.quiet is True
+
+    def test_quiet_long_flag(self):
+        """Test parsing with --quiet flag."""
+        test_args = ["endoflife_fetcher.py", "python", "--quiet"]
+        with patch.object(sys, "argv", test_args):
+            args = parse_args()
+            assert args.quiet is True
+
+    def test_quiet_default_false(self):
+        """Test that --quiet defaults to False."""
+        test_args = ["endoflife_fetcher.py", "python"]
+        with patch.object(sys, "argv", test_args):
+            args = parse_args()
+            assert args.quiet is False
+
+
 class TestParseArgsCheck:
     """Tests for --check and --warn-days argument parsing."""
 

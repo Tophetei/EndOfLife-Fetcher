@@ -291,6 +291,12 @@ def parse_args() -> argparse.Namespace:
             "0 means only already-EOL products (default: 0)"
         ),
     )
+    parser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="Suppress progress output (errors still shown)",
+    )
     return parser.parse_args()
 
 
@@ -301,6 +307,11 @@ def main() -> None:
     output = args.output
     one_file = args.one_file
 
+    def info(msg: str) -> None:
+        """Print message unless quiet mode is enabled."""
+        if not args.quiet:
+            print(msg)
+
     # Storage for results
     results = {}
     errors = {}
@@ -308,14 +319,14 @@ def main() -> None:
     # Fetch data for each product
     for product in products:
         try:
-            print(f"Fetching data for '{product}'...")
+            info(f"Fetching data for '{product}'...")
             data = fetch_product(product, timeout=args.timeout)
             results[product] = data
-            print(f"  ✓ Successfully fetched data for '{product}'")
+            info(f"  [OK] Successfully fetched data for '{product}'")
         except ProductNotFoundError as e:
             error_msg = str(e)
             errors[product] = {"type": "not_found", "message": error_msg}
-            print(f"  ✗ Error: {error_msg}", file=sys.stderr)
+            print(f"  [ERROR] {error_msg}", file=sys.stderr)
         except RateLimitError as e:
             error_msg = str(e)
             errors[product] = {
@@ -323,7 +334,7 @@ def main() -> None:
                 "message": error_msg,
                 "retry_after": e.retry_after,
             }
-            print(f"  ✗ Error: {error_msg}", file=sys.stderr)
+            print(f"  [ERROR] {error_msg}", file=sys.stderr)
             if e.retry_after:
                 print(
                     f"    Hint: Wait {e.retry_after} seconds before retrying",
@@ -332,7 +343,7 @@ def main() -> None:
         except EOLDAPIError as e:
             error_msg = str(e)
             errors[product] = {"type": "api_error", "message": error_msg}
-            print(f"  ✗ Error: {error_msg}", file=sys.stderr)
+            print(f"  [ERROR] {error_msg}", file=sys.stderr)
 
     # Check if we got any successful results
     if not results:
@@ -351,10 +362,10 @@ def main() -> None:
             # Save all products in one file
             if not output:
                 output = os.path.join("Output", "all-products-eol.json")
-                print(f"\nNo output path specified, using default: {output}")
+                info(f"\nNo output path specified, using default: {output}")
 
             save_json(results, output)
-            print(f"\nSaved data for {len(results)} product(s) to: {output}")
+            info(f"\nSaved data for {len(results)} product(s) to: {output}")
         else:
             # Save each product in its own file
             if output and len(products) > 1:
@@ -379,11 +390,11 @@ def main() -> None:
                 saved_files.append((product, file_path))
 
             if len(saved_files) == 1:
-                print(f"\nSaved data for '{saved_files[0][0]}' to: {saved_files[0][1]}")
+                info(f"\nSaved data for '{saved_files[0][0]}' to: {saved_files[0][1]}")
             else:
-                print(f"\nSaved data for {len(saved_files)} products:")
+                info(f"\nSaved data for {len(saved_files)} products:")
                 for product, file_path in saved_files:
-                    print(f"  - {product}: {file_path}")
+                    info(f"  - {product}: {file_path}")
 
     except FileSaveError as e:
         print(f"\nError: {e}", file=sys.stderr)
@@ -401,7 +412,7 @@ def main() -> None:
     if args.check:
         eol_found = check_eol_status(results, args.warn_days)
         if eol_found:
-            print("\n⚠ EOL Check Failed:", file=sys.stderr)
+            print("\n[WARNING] EOL Check Failed:", file=sys.stderr)
             for item in eol_found:
                 if item["days_until"] is None:
                     status = "already EOL"
