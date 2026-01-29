@@ -105,6 +105,33 @@ class TestParseArgsCombined:
             assert args.one_file is True
 
 
+class TestParseArgsListProducts:
+    """Tests for --list-products argument parsing."""
+
+    def test_list_products_flag(self):
+        """Test parsing with --list-products flag."""
+        test_args = ["endoflife_fetcher.py", "--list-products"]
+        with patch.object(sys, "argv", test_args):
+            args = parse_args()
+            assert args.list_products is True
+            assert args.products == []
+
+    def test_list_products_default_false(self):
+        """Test that --list-products defaults to False."""
+        test_args = ["endoflife_fetcher.py", "python"]
+        with patch.object(sys, "argv", test_args):
+            args = parse_args()
+            assert args.list_products is False
+
+    def test_no_args_parses_ok(self):
+        """Test that no arguments still parses (validation is in main)."""
+        test_args = ["endoflife_fetcher.py"]
+        with patch.object(sys, "argv", test_args):
+            args = parse_args()
+            assert args.products == []
+            assert args.list_products is False
+
+
 class TestParseArgsQuiet:
     """Tests for --quiet / -q argument parsing."""
 

@@ -13,6 +13,7 @@ from endoflife_fetcher import (
     ProductNotFoundError,
     RateLimitError,
     fetch_product,
+    fetch_products_list,
 )
 
 
@@ -293,3 +294,86 @@ class TestFetchProductNetworkErrors:
                 fetch_product(product)
 
             assert "Network or API error" in str(exc_info.value)
+
+
+class TestFetchProductsList:
+    """Tests for fetch_products_list function."""
+
+    @responses.activate
+    def test_fetch_products_list_success(self):
+        """Test successful fetch returns list of product names."""
+        api_response = {
+            "total": 3,
+            "result": [
+                {"name": "python", "label": "Python"},
+                {"name": "nodejs", "label": "Node.js"},
+                {"name": "ubuntu", "label": "Ubuntu"},
+            ],
+        }
+
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products",
+            json=api_response,
+            status=200,
+        )
+
+        result = fetch_products_list()
+        assert result == ["python", "nodejs", "ubuntu"]
+
+    @responses.activate
+    def test_fetch_products_list_custom_timeout(self):
+        """Test fetch_products_list with custom timeout."""
+        api_response = {"total": 1, "result": [{"name": "python", "label": "Python"}]}
+
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products",
+            json=api_response,
+            status=200,
+        )
+
+        result = fetch_products_list(timeout=30)
+        assert result == ["python"]
+
+    @responses.activate
+    def test_fetch_products_list_server_error(self):
+        """Test handling of server errors."""
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products",
+            status=500,
+        )
+
+        with pytest.raises(EOLDAPIError) as exc_info:
+            fetch_products_list()
+
+        assert "Server error" in str(exc_info.value)
+
+    @responses.activate
+    def test_fetch_products_list_rate_limit(self):
+        """Test handling of rate limit errors."""
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products",
+            status=429,
+            headers={"Retry-After": "60"},
+        )
+
+        with pytest.raises(RateLimitError):
+            fetch_products_list()
+
+    @responses.activate
+    def test_fetch_products_list_invalid_structure(self):
+        """Test handling of unexpected API response structure."""
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products",
+            json={"unexpected": "structure"},
+            status=200,
+        )
+
+        with pytest.raises(EOLDAPIError) as exc_info:
+            fetch_products_list()
+
+        assert "Unexpected API response" in str(exc_info.value)

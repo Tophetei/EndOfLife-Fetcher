@@ -54,9 +54,8 @@ class TestCLIEntrypoint:
             text=True,
         )
         assert result.returncode != 0
-        assert (
-            "required" in result.stderr.lower() or "arguments" in result.stderr.lower()
-        )
+        assert "no products specified" in result.stderr.lower()
+        assert "--list-products" in result.stderr
 
 
 class TestInstalledEntrypoint:
