@@ -1,144 +1,170 @@
-# EndOfLife Fetcher 🗓️
+# EndOfLife Fetcher
 
-A simple Python script to fetch end-of-life (EOL) data for products from the [endoflife.date](https://endoflife.date/) API.
+[![CI](https://github.com/Tophetei/EndOfLife-Fetcher/actions/workflows/ci.yml/badge.svg)](https://github.com/Tophetei/EndOfLife-Fetcher/actions/workflows/ci.yml)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## 📋 Description
-
-This script allows you to easily retrieve support and end-of-life information for various products (programming languages, operating systems, frameworks, etc.) and save them in JSON format.
-
-## 🚀 Installation
-
-1. Clone or download this project
-2. Install the package:
+A CLI tool to fetch end-of-life data from [endoflife.date](https://endoflife.date/) API and save as JSON. Perfect for CI/CD pipelines to monitor your stack's lifecycle.
 
 ```bash
-# Basic installation
+$ endoflife-fetcher python nodejs --check --warn-days 90
+Fetching data for 'python'...
+  [OK] Successfully fetched data for 'python'
+Fetching data for 'nodejs'...
+  [OK] Successfully fetched data for 'nodejs'
+
+[WARNING] EOL Check Failed:
+  - python 3.8: EOL in 89 days (2025-10-31)
+```
+
+## Features
+
+- **Multi-product support** — Fetch one or many products in a single command
+- **CI/CD integration** — `--check` mode with configurable warning threshold
+- **Automatic retry** — Exponential backoff for transient failures (5xx errors)
+- **Flexible output** — One file per product or combined JSON
+- **TOML configuration** — Store defaults in config files
+- **Quiet mode** — Script-friendly output for automation
+
+## Installation
+
+```bash
+# Install from source
 pip install -e .
 
-# With development dependencies (for testing)
+# Or with development dependencies
 pip install -e ".[dev]"
+
+# Set up pre-commit hooks (contributors)
+pre-commit install
 ```
 
-## 💡 Usage
+After installation, you can use either:
+- `endoflife-fetcher` (installed command)
+- `python endoflife_fetcher.py` (direct script)
 
-### Basic usage
-
-**Single product:**
+## Quick Start
 
 ```bash
-python endoflife_fetcher.py python
+# Fetch EOL data for a product
+endoflife-fetcher python
+
+# Fetch multiple products
+endoflife-fetcher python nodejs ubuntu
+
+# Check for EOL products (exits 1 if found)
+endoflife-fetcher python nodejs --check
+
+# Warn if EOL within 90 days
+endoflife-fetcher python nodejs --check --warn-days 90
+
+# List all available products
+endoflife-fetcher --list-products
 ```
 
-This command will:
+## Configuration
 
-- Fetch EOL data for Python
-- Automatically create the `Output/` folder if it doesn't exist
-- Save the result to `Output/python-eol.json`
+### CLI Options
 
-**Multiple products (new!):**
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--output` | `-o` | Output file path | `Output/{product}-eol.json` |
+| `--timeout` | `-t` | HTTP timeout in seconds | `15` |
+| `--max-retries` | | Retry attempts for transient failures | `3` |
+| `--one-file` | | Combine all products in single JSON | `false` |
+| `--check` | | Check for EOL products, exit 1 if found | `false` |
+| `--warn-days` | | Days threshold for EOL warning | `0` |
+| `--quiet` | `-q` | Suppress progress output | `false` |
+| `--list-products` | | List all available products | |
+| `--config` | | Path to TOML config file | |
+| `--version` | `-V` | Show version | |
+
+### Config File
+
+Store defaults in a TOML configuration file. The tool looks for configs in this order (later overrides earlier):
+
+1. `~/.config/endoflife-fetcher/config.toml` (user config)
+2. `./endoflife-fetcher.toml` (project config)
+3. `--config /path/to/file.toml` (explicit path)
+
+**Example `endoflife-fetcher.toml`:**
+
+```toml
+# HTTP settings
+timeout = 15.0
+max_retries = 3
+
+# Default behavior
+quiet = false
+one_file = false
+warn_days = 30
+
+# Output settings
+output_dir = "Output"
+combined_filename = "all-products-eol.json"
+
+# Default products (used when none specified on CLI)
+products = ["python", "nodejs", "postgresql"]
+```
+
+CLI arguments always override config file values.
+
+## Usage Examples
+
+### Basic Usage
 
 ```bash
-python endoflife_fetcher.py python nodejs ubuntu
+# Single product → Output/python-eol.json
+endoflife-fetcher python
+
+# Multiple products → separate files
+endoflife-fetcher python nodejs ubuntu
+
+# Combined output → Output/all-products-eol.json
+endoflife-fetcher python nodejs ubuntu --one-file
+
+# Custom output path
+endoflife-fetcher python -o reports/python.json
 ```
 
-This command will:
-
-- Fetch EOL data for Python, Node.js, and Ubuntu
-- Save each product in its own file:
-  - `Output/python-eol.json`
-  - `Output/nodejs-eol.json`
-  - `Output/ubuntu-eol.json`
-
-### Examples
-
-**Fetch multiple products:**
+### CI/CD Integration
 
 ```bash
-python endoflife_fetcher.py python nodejs php ruby go
+# Fail pipeline if any product is past EOL
+endoflife-fetcher python nodejs postgresql --check
+
+# Fail if EOL within 90 days (plan ahead!)
+endoflife-fetcher python nodejs postgresql --check --warn-days 90
+
+# Quiet mode for cleaner CI logs
+endoflife-fetcher python nodejs --check --quiet
 ```
 
-**Combine everything in a single file with `--one-file`:**
+**GitHub Actions example:**
+
+```yaml
+- name: Check EOL status
+  run: |
+    pip install -e .
+    endoflife-fetcher python nodejs postgresql --check --warn-days 90
+```
+
+### Scripting
 
 ```bash
-python endoflife_fetcher.py python nodejs ubuntu --one-file
+# List products and filter
+endoflife-fetcher --list-products | grep -i python
+
+# Quiet mode (only errors shown)
+endoflife-fetcher python nodejs -q
+
+# Disable retries for faster failure
+endoflife-fetcher python --max-retries 0
 ```
 
-This creates `Output/all-products-eol.json` with the following structure:
+### Output Format
 
-```json
-{
-  "python": [...],
-  "nodejs": [...],
-  "ubuntu": [...]
-}
-```
-
-**Specify a custom output file with `--one-file`:**
-
-```bash
-python endoflife_fetcher.py python nodejs --one-file -o my-report.json
-```
-
-**Specify an output file for a single product:**
-
-```bash
-python endoflife_fetcher.py ubuntu -o data/ubuntu-versions.json
-```
-
-**Change the HTTP timeout:**
-
-```bash
-python endoflife_fetcher.py python --timeout 30
-```
-
-**Check for EOL products (CI/CD integration):**
-
-```bash
-# Fail if any product cycle is already past EOL
-python endoflife_fetcher.py python nodejs --check
-
-# Fail if any product cycle will be EOL within 90 days
-python endoflife_fetcher.py python nodejs --check --warn-days 90
-```
-
-### Available products
-
-You can fetch info for many products, for example:
-
-- `python`, `nodejs`, `php`, `ruby`, `go`
-- `ubuntu`, `debian`, `windows`, `macos`
-- `docker`, `kubernetes`, `postgresql`, `mysql`
-- `django`, `rails`, `react`, `angular`
-
-For the complete list: [endoflife.date/api/products](https://endoflife.date/api/v1/products)
-
-## 🎯 Options
-
-```bash
-python endoflife_fetcher.py [-h] [-o OUTPUT] [-t TIMEOUT] [--one-file] [--check] [--warn-days DAYS] product [product ...]
-
-Arguments:
-  product              One or more product slugs (e.g., python, ubuntu, nodejs)
-
-Options:
-  -h, --help           Show help message
-  -o, --output OUTPUT  JSON output file path
-                       Default: Output/{product}-eol.json for each product
-                                Output/all-products-eol.json with --one-file
-  -t, --timeout TIMEOUT  HTTP timeout in seconds (default: 15)
-  --one-file           Save all products data in a single JSON file
-                       (default: one file per product)
-  --check              Check if any product cycle is past EOL or within threshold.
-                       Exits with code 1 if EOL products are found.
-  --warn-days DAYS     Days threshold for EOL warning with --check.
-                       0 means only already-EOL products (default: 0)
-```
-
-## 📊 Output format
-
-### One file per product (default)
-
-The script generates a JSON file for each product containing lifecycle information such as:
+**Per-product (default):**
 
 ```json
 [
@@ -148,142 +174,65 @@ The script generates a JSON file for each product containing lifecycle informati
     "eol": "2028-10-31",
     "latest": "3.12.0",
     "lts": false
-  },
-  ...
+  }
 ]
 ```
 
-### Single file (with `--one-file`)
-
-With the `--one-file` option, all products are grouped in a single file:
+**Combined (`--one-file`):**
 
 ```json
 {
-  "python": [
-    {
-      "cycle": "3.12",
-      "releaseDate": "2023-10-02",
-      "eol": "2028-10-31",
-      "latest": "3.12.0",
-      "lts": false
-    }
-  ],
-  "nodejs": [
-    {
-      "cycle": "20",
-      "releaseDate": "2023-04-18",
-      "eol": "2026-04-30",
-      "latest": "20.10.0",
-      "lts": true
-    }
-  ]
+  "python": [...],
+  "nodejs": [...],
+  "ubuntu": [...]
 }
 ```
 
-## ⚠️ Error handling
+## Exit Codes
 
-The script handles errors properly with distinct exit codes:
+| Code | Meaning |
+|------|---------|
+| `0` | Success |
+| `1` | EOL check failed (`--check` found EOL products) |
+| `5` | Partial success (some products failed) |
+| `10` | Product not found (404) |
+| `11` | API or network error |
+| `12` | File writing error |
+| `13` | Rate limit exceeded (429) |
 
-- `0`: Complete success (all products fetched successfully)
-- `1`: EOL check failed (with `--check`, products are past EOL or within threshold)
-- `5`: Partial success (some products succeeded, some failed)
-- `10`: Product not found (404)
-- `11`: API or network error
-- `12`: File writing error
-- `13`: Rate limit exceeded (429) - too many requests
+## Contributing
 
-### Partial success
-
-If you request multiple products and some fail, the script will:
-
-- Continue with the remaining products
-- Save data for successful products
-- Display an error report at the end
-- Return exit code `5` (partial success)
-
-Example:
+### Running Tests
 
 ```bash
-python endoflife_fetcher.py python invalid-product nodejs
-```
-
-Output:
-
-```bash
-Fetching data for 'python'...
-  ✓ Successfully fetched data for 'python'
-Fetching data for 'invalid-product'...
-  ✗ Error: Product 'invalid-product' not found
-Fetching data for 'nodejs'...
-  ✓ Successfully fetched data for 'nodejs'
-
-Saved data for 2 products:
-  - python: Output/python-eol.json
-  - nodejs: Output/nodejs-eol.json
-
-1 product(s) failed:
-  - invalid-product: Product 'invalid-product' not found
-```
-
-Exit code: `5`
-
-## 🛠️ Architecture
-
-The code is organized in a simple and modular way:
-
-- **fetch_product()**: Fetches data from the API
-- **save_json()**: Saves data in JSON format
-- **parse_args()**: Parses command-line arguments
-- **main()**: Main entry point with error handling
-- **Custom exceptions**: Clear and specific error handling
-
-Easy to modify and extend according to your needs!
-
-## 📚 Resources
-
-- [endoflife.date API](https://endoflife.date/docs/api)
-- [List of supported products](https://endoflife.date/)
-
-## 🧪 Testing
-
-To run the tests:
-
-```bash
-# Install with dev dependencies
+# Install dev dependencies
 pip install -e ".[dev]"
 
 # Run all tests
 pytest tests/ -v
 
-# Run a specific test file
-pytest tests/test_fetch_product.py -v
-
 # With coverage
 pytest tests/ --cov=endoflife_fetcher --cov-report=html
 ```
 
-## 💡 Practical examples
-
-**Monitor multiple programming languages:**
+### Linting
 
 ```bash
-python endoflife_fetcher.py python nodejs php ruby go --one-file -o languages.json
+# Check
+ruff check .
+
+# Format
+ruff format .
 ```
 
-**Compare different OS versions:**
+Pre-commit hooks run automatically on commit if installed.
 
-```bash
-python endoflife_fetcher.py ubuntu debian centos
-```
+## License
 
-**Complete web application stack:**
+MIT License - see [LICENSE](LICENSE) for details.
 
-```bash
-python endoflife_fetcher.py python django postgresql nginx redis --one-file
-```
+## Resources
 
-**Containerized infrastructure:**
-
-```bash
-python endoflife_fetcher.py docker kubernetes helm --one-file -o infra.json
-```
+- [endoflife.date](https://endoflife.date/) — Data source
+- [API Documentation](https://endoflife.date/docs/api) — API reference
+- [Available Products](https://endoflife.date/api/v1/products) — Full product list
