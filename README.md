@@ -1,8 +1,6 @@
 # EndOfLife Fetcher
 
-[![CI](https://github.com/Tophetei/EndOfLife-Fetcher/actions/workflows/ci.yml/badge.svg)](https://github.com/Tophetei/EndOfLife-Fetcher/actions/workflows/ci.yml)
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![CI](https://github.com/Tophetei/EndOfLife-Fetcher/actions/workflows/ci.yml/badge.svg)](https://github.com/Tophetei/EndOfLife-Fetcher/actions/workflows/ci.yml) [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A CLI tool to fetch end-of-life data from [endoflife.date](https://endoflife.date/) API and save as JSON. Perfect for CI/CD pipelines to monitor your stack's lifecycle.
 
@@ -40,6 +38,7 @@ pre-commit install
 ```
 
 After installation, you can use either:
+
 - `endoflife-fetcher` (installed command)
 - `python endoflife_fetcher.py` (direct script)
 
@@ -67,7 +66,7 @@ endoflife-fetcher --list-products
 ### CLI Options
 
 | Option | Short | Description | Default |
-|--------|-------|-------------|---------|
+| --------- | ------- | ----------------------- | ----------------------- |
 | `--output` | `-o` | Output file path | `Output/{product}-eol.json` |
 | `--timeout` | `-t` | HTTP timeout in seconds | `15` |
 | `--max-retries` | | Retry attempts for transient failures | `3` |
@@ -191,7 +190,7 @@ endoflife-fetcher python --max-retries 0
 ## Exit Codes
 
 | Code | Meaning |
-|------|---------|
+| ------ | --------- |
 | `0` | Success |
 | `1` | EOL check failed (`--check` found EOL products) |
 | `5` | Partial success (some products failed) |
