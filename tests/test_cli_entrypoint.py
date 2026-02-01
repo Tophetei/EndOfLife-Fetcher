@@ -89,3 +89,70 @@ class TestInstalledEntrypoint:
         )
         assert result.returncode == 0
         assert "usage:" in result.stdout.lower()
+
+
+class TestConfigFlag:
+    """Tests for the --config flag integration."""
+
+    def test_config_flag_file_not_found(self, tmp_path):
+        """Test --config with non-existent file shows error."""
+        nonexistent = tmp_path / "nonexistent.toml"
+        result = subprocess.run(
+            [sys.executable, "-m", "endoflife_fetcher", "--config", str(nonexistent)],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 1
+        assert "Config file not found" in result.stderr
+
+    def test_config_flag_equals_syntax_file_not_found(self, tmp_path):
+        """Test --config= syntax with non-existent file shows error."""
+        nonexistent = tmp_path / "nonexistent.toml"
+        result = subprocess.run(
+            [sys.executable, "-m", "endoflife_fetcher", f"--config={nonexistent}"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 1
+        assert "Config file not found" in result.stderr
+
+    def test_config_flag_loads_file(self, tmp_path):
+        """Test --config loads and applies config file."""
+        config_file = tmp_path / "test-config.toml"
+        config_file.write_text("timeout = 99")
+
+        # Use --help to verify config loads without needing API call
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "endoflife_fetcher",
+                "--config",
+                str(config_file),
+                "--help",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        # The help text should show the config's timeout as default
+        assert "99" in result.stdout
+
+    def test_config_flag_equals_syntax_loads_file(self, tmp_path):
+        """Test --config= syntax loads and applies config file."""
+        config_file = tmp_path / "test-config.toml"
+        config_file.write_text("timeout = 77")
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "endoflife_fetcher",
+                f"--config={config_file}",
+                "--help",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        assert "77" in result.stdout

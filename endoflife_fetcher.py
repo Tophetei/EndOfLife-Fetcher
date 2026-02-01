@@ -11,10 +11,17 @@ import argparse
 import json
 import os
 import sys
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import requests
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib  # pragma: no cover
 
 
 class EOLDAPIError(Exception):
@@ -44,6 +51,106 @@ class FileSaveError(Exception):
 
 
 BASE_URL = "https://endoflife.date/api/v1"
+
+
+@dataclass
+class Config:
+    """Configuration container with defaults."""
+
+    timeout: float = 15.0
+    warn_days: int = 0
+    quiet: bool = False
+    one_file: bool = False
+    output_dir: str = "Output"
+    combined_filename: str = "all-products-eol.json"
+    products: list[str] = field(default_factory=list)
+
+
+def find_config_files() -> list[Path]:
+    """
+    Find config files in priority order (lowest to highest).
+
+    Returns:
+        List of existing config file paths:
+        - ~/.config/endoflife-fetcher/config.toml (user config)
+        - ./endoflife-fetcher.toml (local config)
+    """
+    config_files = []
+
+    # 1. User config (XDG standard)
+    user_config = Path.home() / ".config" / "endoflife-fetcher" / "config.toml"
+    if user_config.exists():
+        config_files.append(user_config)
+
+    # 2. Local config
+    local_config = Path("endoflife-fetcher.toml")
+    if local_config.exists():
+        config_files.append(local_config)
+
+    return config_files
+
+
+def load_config(config_path: Path | str | None = None) -> Config:
+    """
+    Load and merge configuration from files.
+
+    Args:
+        config_path: Explicit config file path (if provided, only this file is loaded)
+
+    Priority (lowest to highest):
+    1. Built-in defaults
+    2. User config (~/.config/endoflife-fetcher/config.toml)
+    3. Local config (./endoflife-fetcher.toml)
+    4. Explicit --config path (replaces auto-discovery)
+
+    Returns:
+        Config object with merged settings
+
+    Raises:
+        FileNotFoundError: If explicit config_path doesn't exist
+    """
+    config = Config()  # Start with defaults
+
+    # Determine which files to load
+    if config_path is not None:
+        # Explicit path: only load this file, error if not found
+        path = Path(config_path)
+        if not path.exists():
+            raise FileNotFoundError(f"Config file not found: {config_path}")
+        config_files = [path]
+    else:
+        # Auto-discovery
+        config_files = find_config_files()
+
+    for file_path in config_files:
+        try:
+            with open(file_path, "rb") as f:
+                file_config = tomllib.load(f)
+
+            # Apply each known key if present
+            if "timeout" in file_config:
+                config.timeout = float(file_config["timeout"])
+            if "warn_days" in file_config:
+                config.warn_days = int(file_config["warn_days"])
+            if "quiet" in file_config:
+                config.quiet = bool(file_config["quiet"])
+            if "one_file" in file_config:
+                config.one_file = bool(file_config["one_file"])
+            if "output_dir" in file_config:
+                config.output_dir = str(file_config["output_dir"])
+            if "combined_filename" in file_config:
+                config.combined_filename = str(file_config["combined_filename"])
+            if "products" in file_config:
+                config.products = list(file_config["products"])
+
+        except tomllib.TOMLDecodeError as e:
+            # Warn but don't fail - config errors shouldn't break the tool
+            print(f"Warning: Invalid TOML in {file_path}: {e}", file=sys.stderr)
+        except OSError as e:
+            # File exists but can't be read - warn
+            print(f"Warning: Could not read {file_path}: {e}", file=sys.stderr)
+
+    return config
 
 
 def fetch_product(product: str, timeout: float = 15) -> list[dict[str, Any]]:
@@ -275,8 +382,17 @@ def check_eol_status(
     return eol_products
 
 
-def parse_args() -> argparse.Namespace:
-    """Parse command line arguments."""
+def parse_args(config: Config | None = None) -> argparse.Namespace:
+    """
+    Parse command line arguments.
+
+    Args:
+        config: Optional Config object to use for default values.
+                If None, built-in defaults are used.
+    """
+    if config is None:
+        config = Config()
+
     parser = argparse.ArgumentParser(
         description=(
             "Fetch end-of-life data for one or more products from "
@@ -296,6 +412,11 @@ def parse_args() -> argparse.Namespace:
         help="Product slug(s) (e.g., python, ubuntu, nodejs)",
     )
     parser.add_argument(
+        "--config",
+        metavar="PATH",
+        help="Path to TOML configuration file",
+    )
+    parser.add_argument(
         "--list-products",
         action="store_true",
         help="List all available products from endoflife.date and exit",
@@ -312,12 +433,13 @@ def parse_args() -> argparse.Namespace:
         "-t",
         "--timeout",
         type=float,
-        default=15.0,
-        help="HTTP timeout in seconds (default: 15)",
+        default=config.timeout,
+        help=f"HTTP timeout in seconds (default: {config.timeout})",
     )
     parser.add_argument(
         "--one-file",
         action="store_true",
+        default=config.one_file,
         help=(
             "Save all products data in a single JSON file "
             "(default: one file per product)"
@@ -334,17 +456,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--warn-days",
         type=int,
-        default=0,
+        default=config.warn_days,
         metavar="DAYS",
         help=(
             "Days threshold for EOL warning with --check. "
-            "0 means only already-EOL products (default: 0)"
+            f"0 means only already-EOL products (default: {config.warn_days})"
         ),
     )
     parser.add_argument(
         "-q",
         "--quiet",
         action="store_true",
+        default=config.quiet,
         help="Suppress progress output (errors still shown)",
     )
     return parser.parse_args()
@@ -352,8 +475,26 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     """Main entry point for the script."""
-    args = parse_args()
-    products = args.products
+    # First, check for --config argument to load config before full parsing
+    config_path = None
+    for i, arg in enumerate(sys.argv[1:], 1):
+        if arg == "--config" and i < len(sys.argv):
+            config_path = sys.argv[i + 1]
+            break
+        elif arg.startswith("--config="):
+            config_path = arg.split("=", 1)[1]
+            break
+
+    # Load configuration
+    try:
+        config = load_config(config_path)
+    except FileNotFoundError as e:
+        print(f"[ERROR] {e}", file=sys.stderr)
+        sys.exit(1)
+
+    # Parse arguments with config-based defaults
+    args = parse_args(config)
+    products = args.products or config.products
     output = args.output
     one_file = args.one_file
 
@@ -437,7 +578,7 @@ def main() -> None:
         if one_file:
             # Save all products in one file
             if not output:
-                output = os.path.join("Output", "all-products-eol.json")
+                output = os.path.join(config.output_dir, config.combined_filename)
                 info(f"\nNo output path specified, using default: {output}")
 
             save_json(results, output)
@@ -460,7 +601,7 @@ def main() -> None:
                     file_path = output
                 else:
                     # Use default naming pattern
-                    file_path = os.path.join("Output", f"{product}-eol.json")
+                    file_path = os.path.join(config.output_dir, f"{product}-eol.json")
 
                 save_json(data, file_path)
                 saved_files.append((product, file_path))
