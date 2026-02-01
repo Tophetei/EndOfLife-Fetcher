@@ -436,28 +436,16 @@ def parse_args(config: Config | None = None) -> argparse.Namespace:
             "endoflife.date API and save as JSON."
         )
     )
-    parser.add_argument(
-        "-V",
-        "--version",
-        action="version",
-        version=f"%(prog)s {__version__}",
-    )
+
+    # Positional arguments
     parser.add_argument(
         "products",
         nargs="*",
         metavar="product",
         help="Product slug(s) (e.g., python, ubuntu, nodejs)",
     )
-    parser.add_argument(
-        "--config",
-        metavar="PATH",
-        help="Path to TOML configuration file",
-    )
-    parser.add_argument(
-        "--list-products",
-        action="store_true",
-        help="List all available products from endoflife.date and exit",
-    )
+
+    # Output options
     parser.add_argument(
         "-o",
         "--output",
@@ -492,6 +480,8 @@ def parse_args(config: Config | None = None) -> argparse.Namespace:
             "(default: one file per product)"
         ),
     )
+
+    # Check mode options
     parser.add_argument(
         "--check",
         action="store_true",
@@ -510,6 +500,8 @@ def parse_args(config: Config | None = None) -> argparse.Namespace:
             f"0 means only already-EOL products (default: {config.warn_days})"
         ),
     )
+
+    # Scripting options
     parser.add_argument(
         "-q",
         "--quiet",
@@ -517,6 +509,25 @@ def parse_args(config: Config | None = None) -> argparse.Namespace:
         default=config.quiet,
         help="Suppress progress output (errors still shown)",
     )
+    parser.add_argument(
+        "--list-products",
+        action="store_true",
+        help="List all available products from endoflife.date and exit",
+    )
+
+    # Utility options
+    parser.add_argument(
+        "--config",
+        metavar="PATH",
+        help="Path to TOML configuration file",
+    )
+    parser.add_argument(
+        "-V",
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+    )
+
     return parser.parse_args()
 
 
