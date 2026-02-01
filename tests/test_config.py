@@ -16,6 +16,7 @@ class TestConfigDataclass:
         """Test Config has correct default values."""
         config = Config()
         assert config.timeout == 15.0
+        assert config.max_retries == 3
         assert config.warn_days == 0
         assert config.quiet is False
         assert config.one_file is False
@@ -113,6 +114,7 @@ class TestLoadConfig:
         """Test loading all configuration options."""
         config_content = """
 timeout = 30.0
+max_retries = 5
 warn_days = 90
 quiet = true
 one_file = true
@@ -128,6 +130,7 @@ products = ["python", "nodejs"]
             config = load_config()
 
         assert config.timeout == 30.0
+        assert config.max_retries == 5
         assert config.warn_days == 90
         assert config.quiet is True
         assert config.one_file is True

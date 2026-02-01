@@ -254,47 +254,80 @@ class TestFetchProductNetworkErrors:
 
     def test_fetch_product_timeout(self):
         """Test request timeout."""
-        import requests
-
         product = "python"
 
-        with patch("endoflife_fetcher.requests.get") as mock_get:
-            mock_get.side_effect = requests.exceptions.Timeout("Connection timeout")
-
+        with patch.object(
+            requests.Session, "get", side_effect=requests.exceptions.Timeout("timeout")
+        ):
             with pytest.raises(EOLDAPIError) as exc_info:
-                fetch_product(product, timeout=1)
+                fetch_product(product, timeout=1, max_retries=0)
 
             assert "Network or API error" in str(exc_info.value)
 
     def test_fetch_product_connection_error(self):
         """Test handling of connection errors."""
-        import requests
-
         product = "python"
 
-        with patch("endoflife_fetcher.requests.get") as mock_get:
-            mock_get.side_effect = requests.exceptions.ConnectionError(
-                "Connection refused"
-            )
-
+        with patch.object(
+            requests.Session,
+            "get",
+            side_effect=requests.exceptions.ConnectionError("Connection refused"),
+        ):
             with pytest.raises(EOLDAPIError) as exc_info:
-                fetch_product(product)
+                fetch_product(product, max_retries=0)
 
             assert "Network or API error" in str(exc_info.value)
 
     def test_fetch_product_ssl_error(self):
         """Test handling of SSL errors."""
-        import requests
-
         product = "python"
 
-        with patch("endoflife_fetcher.requests.get") as mock_get:
-            mock_get.side_effect = requests.exceptions.SSLError("SSL certificate error")
-
+        with patch.object(
+            requests.Session,
+            "get",
+            side_effect=requests.exceptions.SSLError("SSL certificate error"),
+        ):
             with pytest.raises(EOLDAPIError) as exc_info:
-                fetch_product(product)
+                fetch_product(product, max_retries=0)
 
             assert "Network or API error" in str(exc_info.value)
+
+
+class TestFetchProductRetry:
+    """Tests for retry behavior with transient failures."""
+
+    @responses.activate
+    def test_retry_succeeds_after_server_error(self):
+        """Test that retry recovers from transient 503 error."""
+        product = "python"
+        releases = [{"name": "3.12", "isEol": False, "eolFrom": "2028-10-31"}]
+
+        # First request fails with 503, second succeeds
+        responses.add(responses.GET, f"{BASE_URL}/products/{product}", status=503)
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/{product}",
+            json={"result": {"releases": releases}},
+            status=200,
+        )
+
+        # With retry enabled, should succeed
+        result = fetch_product(product, max_retries=3)
+        assert len(result) == 1
+        assert result[0]["name"] == "3.12"
+
+    @responses.activate
+    def test_retry_disabled_fails_immediately(self):
+        """Test that max_retries=0 disables retry."""
+        product = "python"
+
+        responses.add(responses.GET, f"{BASE_URL}/products/{product}", status=503)
+
+        # With retry disabled, should fail immediately
+        with pytest.raises(EOLDAPIError) as exc_info:
+            fetch_product(product, max_retries=0)
+
+        assert "Server error 503" in str(exc_info.value)
 
 
 class TestFetchProductsList:
@@ -381,13 +414,13 @@ class TestFetchProductsList:
 
     def test_fetch_products_list_network_error(self):
         """Test handling of network errors (RequestException)."""
-        with patch("endoflife_fetcher.requests.get") as mock_get:
-            mock_get.side_effect = requests.exceptions.ConnectionError(
-                "Connection refused"
-            )
-
+        with patch.object(
+            requests.Session,
+            "get",
+            side_effect=requests.exceptions.ConnectionError("Connection refused"),
+        ):
             with pytest.raises(EOLDAPIError) as exc_info:
-                fetch_products_list()
+                fetch_products_list(max_retries=0)
 
             assert "Network or API error" in str(exc_info.value)
 
