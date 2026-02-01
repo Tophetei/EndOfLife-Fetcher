@@ -199,6 +199,16 @@ endoflife-fetcher python --max-retries 0
 | `12` | File writing error |
 | `13` | Rate limit exceeded (429) |
 
+## API Compliance
+
+This tool follows [endoflife.date API guidelines](https://endoflife.date/docs/api/v1/):
+
+- **Rate limiting** — Respects 429 responses with `Retry-After` header
+- **Transient errors** — Automatic retry with backoff on 5xx (Netlify infrastructure)
+- **Redirects** — Follows 301 redirects for renamed products
+- **Forward compatible** — Accepts new fields and enum values without breaking
+- **License** — Data sourced from [endoflife.date](https://endoflife.date/) (MIT License)
+
 ## Contributing
 
 ### Running Tests
