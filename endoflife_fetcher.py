@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Any
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -58,6 +60,7 @@ class Config:
     """Configuration container with defaults."""
 
     timeout: float = 15.0
+    max_retries: int = 3
     warn_days: int = 0
     quiet: bool = False
     one_file: bool = False
@@ -130,6 +133,8 @@ def load_config(config_path: Path | str | None = None) -> Config:
             # Apply each known key if present
             if "timeout" in file_config:
                 config.timeout = float(file_config["timeout"])
+            if "max_retries" in file_config:
+                config.max_retries = int(file_config["max_retries"])
             if "warn_days" in file_config:
                 config.warn_days = int(file_config["warn_days"])
             if "quiet" in file_config:
@@ -153,13 +158,46 @@ def load_config(config_path: Path | str | None = None) -> Config:
     return config
 
 
-def fetch_product(product: str, timeout: float = 15) -> list[dict[str, Any]]:
+def create_retry_session(
+    max_retries: int = 3, backoff_factor: float = 1
+) -> requests.Session:
+    """
+    Create a requests session with retry strategy for transient failures.
+
+    Args:
+        max_retries: Maximum number of retry attempts (0 to disable)
+        backoff_factor: Multiplier for exponential backoff delay
+
+    Returns:
+        Configured requests.Session with retry adapter mounted
+    """
+    session = requests.Session()
+
+    if max_retries > 0:
+        retry = Retry(
+            total=max_retries,
+            backoff_factor=backoff_factor,
+            status_forcelist=[500, 502, 503, 504],
+            allowed_methods=["GET"],
+            raise_on_status=False,  # Let us handle status codes manually
+        )
+        adapter = HTTPAdapter(max_retries=retry)
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
+
+    return session
+
+
+def fetch_product(
+    product: str, timeout: float = 15, max_retries: int = 3
+) -> list[dict[str, Any]]:
     """
     Fetch end-of-life data for a specific product.
 
     Args:
         product: Product slug (e.g., 'python', 'ubuntu', 'nodejs')
         timeout: HTTP request timeout in seconds
+        max_retries: Maximum retry attempts for transient failures (0 to disable)
 
     Returns:
         List of release dicts from the API
@@ -169,11 +207,10 @@ def fetch_product(product: str, timeout: float = 15) -> list[dict[str, Any]]:
         EOLDAPIError: For network errors, server errors, or invalid responses
     """
     url = f"{BASE_URL}/products/{product}"
+    session = create_retry_session(max_retries=max_retries)
 
     try:
-        resp = requests.get(
-            url, timeout=timeout, headers={"Accept": "application/json"}
-        )
+        resp = session.get(url, timeout=timeout, headers={"Accept": "application/json"})
     except requests.exceptions.RequestException as e:
         raise EOLDAPIError(f"Network or API error while requesting {url}: {e}") from e
 
@@ -222,12 +259,13 @@ def fetch_product(product: str, timeout: float = 15) -> list[dict[str, Any]]:
     return releases
 
 
-def fetch_products_list(timeout: float = 15) -> list[str]:
+def fetch_products_list(timeout: float = 15, max_retries: int = 3) -> list[str]:
     """
     Fetch list of all available product names from the API.
 
     Args:
         timeout: HTTP request timeout in seconds
+        max_retries: Maximum retry attempts for transient failures (0 to disable)
 
     Returns:
         List of product slugs (e.g., ['python', 'nodejs', 'ubuntu', ...])
@@ -236,11 +274,10 @@ def fetch_products_list(timeout: float = 15) -> list[str]:
         EOLDAPIError: For network errors, server errors, or invalid responses
     """
     url = f"{BASE_URL}/products"
+    session = create_retry_session(max_retries=max_retries)
 
     try:
-        resp = requests.get(
-            url, timeout=timeout, headers={"Accept": "application/json"}
-        )
+        resp = session.get(url, timeout=timeout, headers={"Accept": "application/json"})
     except requests.exceptions.RequestException as e:
         raise EOLDAPIError(f"Network or API error while requesting {url}: {e}") from e
 
@@ -437,6 +474,16 @@ def parse_args(config: Config | None = None) -> argparse.Namespace:
         help=f"HTTP timeout in seconds (default: {config.timeout})",
     )
     parser.add_argument(
+        "--max-retries",
+        type=int,
+        default=config.max_retries,
+        metavar="N",
+        help=(
+            "Max retry attempts for transient failures "
+            f"(default: {config.max_retries}). Set to 0 to disable."
+        ),
+    )
+    parser.add_argument(
         "--one-file",
         action="store_true",
         default=config.one_file,
@@ -507,7 +554,9 @@ def main() -> None:
     if args.list_products:
         try:
             info("Fetching products list...")
-            products_list = fetch_products_list(timeout=args.timeout)
+            products_list = fetch_products_list(
+                timeout=args.timeout, max_retries=args.max_retries
+            )
             for product in products_list:
                 print(product)
         except EOLDAPIError as e:
@@ -532,7 +581,9 @@ def main() -> None:
     for product in products:
         try:
             info(f"Fetching data for '{product}'...")
-            data = fetch_product(product, timeout=args.timeout)
+            data = fetch_product(
+                product, timeout=args.timeout, max_retries=args.max_retries
+            )
             results[product] = data
             info(f"  [OK] Successfully fetched data for '{product}'")
         except ProductNotFoundError as e:

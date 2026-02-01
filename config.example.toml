@@ -15,6 +15,11 @@
 # HTTP request timeout in seconds
 timeout = 15.0
 
+# Max retry attempts for transient failures (5xx errors)
+# Uses exponential backoff: 1s, 2s, 4s between retries
+# Set to 0 to disable retries
+max_retries = 3
+
 # Days threshold for EOL warning with --check
 # 0 = only flag already-EOL products
 # 90 = also flag products EOL within 90 days
