@@ -1,0 +1,36 @@
+# EndOfLife-Fetcher Configuration Example
+#
+# Copy this file to one of these locations:
+#   - ~/.config/endoflife-fetcher/config.toml  (user config)
+#   - ./endoflife-fetcher.toml                 (project config)
+#
+# Or specify a custom path with: --config /path/to/config.toml
+#
+# Priority (lowest to highest):
+#   1. Built-in defaults
+#   2. User config (~/.config/endoflife-fetcher/config.toml)
+#   3. Project config (./endoflife-fetcher.toml)
+#   4. CLI arguments (always win)
+
+# HTTP request timeout in seconds
+timeout = 15.0
+
+# Days threshold for EOL warning with --check
+# 0 = only flag already-EOL products
+# 90 = also flag products EOL within 90 days
+warn_days = 0
+
+# Suppress progress output (errors still shown)
+quiet = false
+
+# Save all products in a single JSON file instead of one per product
+one_file = false
+
+# Output directory for JSON files
+output_dir = "Output"
+
+# Filename for combined output (used with one_file = true)
+combined_filename = "all-products-eol.json"
+
+# Default products to fetch (can be overridden by CLI arguments)
+# products = ["python", "nodejs", "ubuntu"]

@@ -5,6 +5,7 @@ Tests for the fetch_product function.
 from unittest.mock import patch
 
 import pytest
+import requests
 import responses
 
 from endoflife_fetcher import (
@@ -377,3 +378,45 @@ class TestFetchProductsList:
             fetch_products_list()
 
         assert "Unexpected API response" in str(exc_info.value)
+
+    def test_fetch_products_list_network_error(self):
+        """Test handling of network errors (RequestException)."""
+        with patch("endoflife_fetcher.requests.get") as mock_get:
+            mock_get.side_effect = requests.exceptions.ConnectionError(
+                "Connection refused"
+            )
+
+            with pytest.raises(EOLDAPIError) as exc_info:
+                fetch_products_list()
+
+            assert "Network or API error" in str(exc_info.value)
+
+    @responses.activate
+    def test_fetch_products_list_client_error(self):
+        """Test handling of HTTP 4xx client errors (non-404, non-429)."""
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products",
+            status=400,
+        )
+
+        with pytest.raises(EOLDAPIError) as exc_info:
+            fetch_products_list()
+
+        assert "HTTP 400 error" in str(exc_info.value)
+
+    @responses.activate
+    def test_fetch_products_list_invalid_json(self):
+        """Test handling of invalid JSON response (HTML error page)."""
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products",
+            body="<html><body>Not Found</body></html>",
+            status=200,
+            content_type="text/html",
+        )
+
+        with pytest.raises(EOLDAPIError) as exc_info:
+            fetch_products_list()
+
+        assert "Invalid JSON" in str(exc_info.value)

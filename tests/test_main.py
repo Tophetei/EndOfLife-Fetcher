@@ -440,6 +440,37 @@ class TestMainPartialSuccess:
         assert "Successfully fetched data for 'nodejs'" in captured.out
         assert "1 product(s) failed" in captured.err
         assert "invalid" in captured.err
+        # Should show hint about checking available products (not_found error)
+        assert "Check available products" in captured.err
+
+    @responses.activate
+    def test_partial_success_api_error_no_hint(self, tmp_path, capsys, monkeypatch):
+        """Test partial success with API error (not 404) doesn't show product hint."""
+        releases_python = [{"name": "3.12", "isEol": False, "eolFrom": "2028-10-31"}]
+
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/python",
+            json=make_v1_response(releases_python),
+            status=200,
+        )
+        # API error (500), not "not_found" (404)
+        responses.add(responses.GET, f"{BASE_URL}/products/broken", status=500)
+
+        monkeypatch.chdir(tmp_path)
+
+        test_args = ["endoflife_fetcher.py", "python", "broken"]
+        with patch.object(sys, "argv", test_args):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        assert exc_info.value.code == 5
+
+        captured = capsys.readouterr()
+        assert "Successfully fetched data for 'python'" in captured.out
+        assert "1 product(s) failed" in captured.err
+        # Should NOT show hint about checking available products (not a 404)
+        assert "Check available products" not in captured.err
 
     @responses.activate
     def test_partial_success_one_file(self, tmp_path, capsys, monkeypatch):
@@ -1076,3 +1107,72 @@ class TestMainCheckMode:
         test_args = ["endoflife_fetcher.py", "python"]
         with patch.object(sys, "argv", test_args):
             main()  # Should not raise
+
+
+class TestMainConfigFlag:
+    """Tests for --config flag in main()."""
+
+    @responses.activate
+    def test_config_flag_space_syntax(self, tmp_path, monkeypatch):
+        """Test --config /path/to/file syntax loads config."""
+        config_file = tmp_path / "custom.toml"
+        config_file.write_text("timeout = 99")
+
+        releases = [{"name": "3.12", "isEol": False, "eolFrom": "2099-01-01"}]
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/python",
+            json=make_v1_response(releases),
+            status=200,
+        )
+
+        monkeypatch.chdir(tmp_path)
+
+        test_args = [
+            "endoflife_fetcher.py",
+            "--config",
+            str(config_file),
+            "python",
+            "--check",
+        ]
+        with patch.object(sys, "argv", test_args):
+            main()  # Should not raise
+
+    @responses.activate
+    def test_config_flag_equals_syntax(self, tmp_path, monkeypatch):
+        """Test --config=/path/to/file syntax loads config."""
+        config_file = tmp_path / "custom.toml"
+        config_file.write_text("timeout = 77")
+
+        releases = [{"name": "3.12", "isEol": False, "eolFrom": "2099-01-01"}]
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/python",
+            json=make_v1_response(releases),
+            status=200,
+        )
+
+        monkeypatch.chdir(tmp_path)
+
+        test_args = [
+            "endoflife_fetcher.py",
+            f"--config={config_file}",
+            "python",
+            "--check",
+        ]
+        with patch.object(sys, "argv", test_args):
+            main()  # Should not raise
+
+    def test_config_flag_file_not_found(self, tmp_path, capsys, monkeypatch):
+        """Test --config with non-existent file exits with error."""
+        monkeypatch.chdir(tmp_path)
+
+        nonexistent = tmp_path / "nonexistent.toml"
+        test_args = ["endoflife_fetcher.py", "--config", str(nonexistent), "python"]
+        with patch.object(sys, "argv", test_args):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "Config file not found" in captured.err
