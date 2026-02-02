@@ -20,6 +20,8 @@ class TestConfigDataclass:
         assert config.warn_days == 0
         assert config.quiet is False
         assert config.one_file is False
+        assert config.lts is False
+        assert config.active is False
         assert config.output_dir == "Output"
         assert config.combined_filename == "all-products-eol.json"
         assert config.products == []
@@ -118,6 +120,8 @@ max_retries = 5
 warn_days = 90
 quiet = true
 one_file = true
+lts = true
+active = true
 output_dir = "data"
 combined_filename = "eol-report.json"
 products = ["python", "nodejs"]
@@ -134,6 +138,8 @@ products = ["python", "nodejs"]
         assert config.warn_days == 90
         assert config.quiet is True
         assert config.one_file is True
+        assert config.lts is True
+        assert config.active is True
         assert config.output_dir == "data"
         assert config.combined_filename == "eol-report.json"
         assert config.products == ["python", "nodejs"]

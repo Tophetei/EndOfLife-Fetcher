@@ -1176,3 +1176,95 @@ class TestMainConfigFlag:
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
         assert "Config file not found" in captured.err
+
+
+class TestMainFilters:
+    """Tests for --lts and --active filters."""
+
+    @responses.activate
+    def test_lts_filter_no_matches(self, tmp_path, capsys, monkeypatch):
+        """Test --lts with product that has no LTS releases shows message."""
+        # Python has no LTS releases
+        releases = [
+            {"name": "3.12", "isLts": False, "isEol": False, "eolFrom": "2028-10-31"},
+            {"name": "3.11", "isLts": False, "isEol": False, "eolFrom": "2027-10-31"},
+        ]
+
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/python",
+            json=make_v1_response(releases),
+            status=200,
+        )
+
+        monkeypatch.chdir(tmp_path)
+
+        test_args = ["endoflife_fetcher.py", "python", "--lts"]
+        with patch.object(sys, "argv", test_args):
+            main()
+
+        captured = capsys.readouterr()
+        assert "No releases match filters" in captured.out
+
+    @responses.activate
+    def test_lts_filter_with_matches(self, tmp_path, monkeypatch):
+        """Test --lts filters correctly and saves only LTS releases."""
+        releases = [
+            {"name": "24", "isLts": True, "isEol": False, "eolFrom": "2028-04-30"},
+            {"name": "23", "isLts": False, "isEol": False, "eolFrom": "2026-06-01"},
+            {"name": "22", "isLts": True, "isEol": False, "eolFrom": "2027-04-30"},
+        ]
+
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/nodejs",
+            json=make_v1_response(releases),
+            status=200,
+        )
+
+        monkeypatch.chdir(tmp_path)
+
+        test_args = ["endoflife_fetcher.py", "nodejs", "--lts"]
+        with patch.object(sys, "argv", test_args):
+            main()
+
+        # Check the output file contains only LTS releases
+        output_file = tmp_path / "Output" / "nodejs-eol.json"
+        assert output_file.exists()
+
+        with open(output_file) as f:
+            data = json.load(f)
+
+        assert len(data) == 2
+        names = [r["name"] for r in data]
+        assert "24" in names
+        assert "22" in names
+        assert "23" not in names
+
+    @responses.activate
+    def test_active_filter(self, tmp_path, monkeypatch):
+        """Test --active filters out EOL releases."""
+        releases = [
+            {"name": "24", "isLts": True, "isEol": False, "eolFrom": "2028-04-30"},
+            {"name": "23", "isLts": False, "isEol": True, "eolFrom": "2025-06-01"},
+        ]
+
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/nodejs",
+            json=make_v1_response(releases),
+            status=200,
+        )
+
+        monkeypatch.chdir(tmp_path)
+
+        test_args = ["endoflife_fetcher.py", "nodejs", "--active"]
+        with patch.object(sys, "argv", test_args):
+            main()
+
+        output_file = tmp_path / "Output" / "nodejs-eol.json"
+        with open(output_file) as f:
+            data = json.load(f)
+
+        assert len(data) == 1
+        assert data[0]["name"] == "24"
