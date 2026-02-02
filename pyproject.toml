@@ -45,7 +45,7 @@ dev = [
 ]
 
 [project.scripts]
-endoflife-fetcher = "endoflife_fetcher:main"
+endoflife-fetcher = "endoflife_fetcher.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/Tophetei/EndOfLife-Fetcher"
