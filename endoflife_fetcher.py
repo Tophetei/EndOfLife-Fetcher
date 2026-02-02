@@ -128,34 +128,33 @@ def load_config(config_path: Path | str | None = None) -> Config:
         # Auto-discovery
         config_files = find_config_files()
 
+    # Mapping of config keys to their type converters
+    field_types: dict[str, type] = {
+        "timeout": float,
+        "max_retries": int,
+        "warn_days": int,
+        "quiet": bool,
+        "one_file": bool,
+        "lts": bool,
+        "active": bool,
+        "output_dir": str,
+        "combined_filename": str,
+    }
+
     for file_path in config_files:
         try:
             with open(file_path, "rb") as f:
                 file_config = tomllib.load(f)
 
-            # Apply each known key if present
-            if "timeout" in file_config:
-                config.timeout = float(file_config["timeout"])
-            if "max_retries" in file_config:
-                config.max_retries = int(file_config["max_retries"])
-            if "warn_days" in file_config:
-                config.warn_days = int(file_config["warn_days"])
-            if "quiet" in file_config:
-                config.quiet = bool(file_config["quiet"])
-            if "one_file" in file_config:
-                config.one_file = bool(file_config["one_file"])
-            if "lts" in file_config:
-                config.lts = bool(file_config["lts"])
-            if "active" in file_config:
-                config.active = bool(file_config["active"])
-            if "output_dir" in file_config:
-                config.output_dir = str(file_config["output_dir"])
-            if "combined_filename" in file_config:
-                config.combined_filename = str(file_config["combined_filename"])
+            # Apply typed fields
+            for key, converter in field_types.items():
+                if key in file_config:
+                    setattr(config, key, converter(file_config[key]))
+
+            # Handle special cases
             if "products" in file_config:
                 config.products = list(file_config["products"])
             if "groups" in file_config:
-                # Merge groups (later files override earlier ones)
                 config.groups.update(file_config["groups"])
 
         except tomllib.TOMLDecodeError as e:
@@ -198,34 +197,37 @@ def create_retry_session(
     return session
 
 
-def fetch_product(
-    product: str, timeout: float = 15, max_retries: int = 3
-) -> list[dict[str, Any]]:
+def _api_get(
+    endpoint: str, timeout: float = 15, max_retries: int = 3
+) -> dict[str, Any]:
     """
-    Fetch end-of-life data for a specific product.
+    Make a GET request to the endoflife.date API.
+
+    Handles common error cases: network errors, rate limits, server errors,
+    and JSON parsing.
 
     Args:
-        product: Product slug (e.g., 'python', 'ubuntu', 'nodejs')
+        endpoint: API endpoint (e.g., '/products' or '/products/python')
         timeout: HTTP request timeout in seconds
         max_retries: Maximum retry attempts for transient failures (0 to disable)
 
     Returns:
-        List of release dicts from the API
+        Parsed JSON response as dict
 
     Raises:
-        ProductNotFoundError: If the product is not found (404)
+        RateLimitError: If rate limit is exceeded (HTTP 429)
         EOLDAPIError: For network errors, server errors, or invalid responses
+
+    Note:
+        Does NOT handle 404 - callers should check for that if needed.
     """
-    url = f"{BASE_URL}/products/{product}"
+    url = f"{BASE_URL}{endpoint}"
     session = create_retry_session(max_retries=max_retries)
 
     try:
         resp = session.get(url, timeout=timeout, headers={"Accept": "application/json"})
     except requests.exceptions.RequestException as e:
         raise EOLDAPIError(f"Network or API error while requesting {url}: {e}") from e
-
-    if resp.status_code == 404:
-        raise ProductNotFoundError(f"Product '{product}' not found on endoflife.date.")
 
     if resp.status_code == 429:
         retry_after = resp.headers.get("Retry-After")
@@ -251,22 +253,52 @@ def fetch_product(
         raise EOLDAPIError(f"Server error {resp.status_code} from endoflife.date.")
 
     if not resp.ok:
-        raise EOLDAPIError(f"HTTP {resp.status_code} error from endoflife.date.")
+        # Return response for caller to handle specific status codes (e.g., 404)
+        return {"_status_code": resp.status_code, "_ok": False}
 
     try:
-        data = resp.json()
+        return resp.json()
     except ValueError as e:
         raise EOLDAPIError(f"Invalid JSON received from API: {e}") from e
 
+
+def fetch_product(
+    product: str, timeout: float = 15, max_retries: int = 3
+) -> list[dict[str, Any]]:
+    """
+    Fetch end-of-life data for a specific product.
+
+    Args:
+        product: Product slug (e.g., 'python', 'ubuntu', 'nodejs')
+        timeout: HTTP request timeout in seconds
+        max_retries: Maximum retry attempts for transient failures (0 to disable)
+
+    Returns:
+        List of release dicts from the API
+
+    Raises:
+        ProductNotFoundError: If the product is not found (404)
+        EOLDAPIError: For network errors, server errors, or invalid responses
+    """
+    data = _api_get(f"/products/{product}", timeout=timeout, max_retries=max_retries)
+
+    # Handle 404 specifically for products
+    if data.get("_ok") is False:
+        if data.get("_status_code") == 404:
+            raise ProductNotFoundError(
+                f"Product '{product}' not found on endoflife.date."
+            )
+        raise EOLDAPIError(
+            f"HTTP {data.get('_status_code')} error from endoflife.date."
+        )
+
     # Extract releases from v1 API response structure
     try:
-        releases = data["result"]["releases"]
+        return data["result"]["releases"]
     except (KeyError, TypeError) as e:
         raise EOLDAPIError(
             f"Unexpected API response structure for '{product}': {e}"
         ) from e
-
-    return releases
 
 
 def fetch_products_list(timeout: float = 15, max_retries: int = 3) -> list[str]:
@@ -283,38 +315,18 @@ def fetch_products_list(timeout: float = 15, max_retries: int = 3) -> list[str]:
     Raises:
         EOLDAPIError: For network errors, server errors, or invalid responses
     """
-    url = f"{BASE_URL}/products"
-    session = create_retry_session(max_retries=max_retries)
+    data = _api_get("/products", timeout=timeout, max_retries=max_retries)
 
-    try:
-        resp = session.get(url, timeout=timeout, headers={"Accept": "application/json"})
-    except requests.exceptions.RequestException as e:
-        raise EOLDAPIError(f"Network or API error while requesting {url}: {e}") from e
-
-    if resp.status_code == 429:
-        retry_after = resp.headers.get("Retry-After")
-        raise RateLimitError(
-            "Rate limit exceeded. Please wait before making more requests.",
-            retry_after=retry_after,
+    # Handle unexpected error responses
+    if data.get("_ok") is False:
+        raise EOLDAPIError(
+            f"HTTP {data.get('_status_code')} error from endoflife.date."
         )
 
-    if str(resp.status_code).startswith("5"):
-        raise EOLDAPIError(f"Server error {resp.status_code} from endoflife.date.")
-
-    if not resp.ok:
-        raise EOLDAPIError(f"HTTP {resp.status_code} error from endoflife.date.")
-
     try:
-        data = resp.json()
-    except ValueError as e:
-        raise EOLDAPIError(f"Invalid JSON received from API: {e}") from e
-
-    try:
-        products = [product["name"] for product in data["result"]]
+        return [product["name"] for product in data["result"]]
     except (KeyError, TypeError) as e:
         raise EOLDAPIError(f"Unexpected API response structure: {e}") from e
-
-    return products
 
 
 def filter_releases(
@@ -457,64 +469,41 @@ def check_eol_status(
             if not isinstance(release, dict):
                 continue
 
-            # v1 API uses "name" for cycle/version name
             cycle_name = release.get("name", "unknown")
-            # v1 API uses "isEol" (bool) and "eolFrom" (date string)
             is_eol = release.get("isEol", False)
             eol_from = release.get("eolFrom")
 
-            if is_eol:
-                # Already past EOL
-                if eol_from:
-                    try:
-                        eol_date = datetime.strptime(eol_from, "%Y-%m-%d").date()
-                        days_until = (eol_date - today).days
-                        eol_products.append(
-                            {
-                                "product": product,
-                                "cycle": cycle_name,
-                                "eol": eol_from,
-                                "days_until": days_until,
-                            }
-                        )
-                    except ValueError:
-                        # Invalid date format, still EOL but no date
-                        eol_products.append(
-                            {
-                                "product": product,
-                                "cycle": cycle_name,
-                                "eol": "true (already EOL)",
-                                "days_until": None,
-                            }
-                        )
-                else:
-                    # EOL but no date provided
-                    eol_products.append(
-                        {
-                            "product": product,
-                            "cycle": cycle_name,
-                            "eol": "true (already EOL)",
-                            "days_until": None,
-                        }
-                    )
-            elif eol_from:
-                # Not yet EOL, but has a future EOL date - check threshold
+            # Try to parse the EOL date
+            eol_date = None
+            days_until = None
+            if eol_from:
                 try:
                     eol_date = datetime.strptime(eol_from, "%Y-%m-%d").date()
                     days_until = (eol_date - today).days
-
-                    if eol_date <= threshold_date:
-                        eol_products.append(
-                            {
-                                "product": product,
-                                "cycle": cycle_name,
-                                "eol": eol_from,
-                                "days_until": days_until,
-                            }
-                        )
                 except (ValueError, TypeError):
-                    # Invalid date format or type, skip
-                    continue
+                    pass
+
+            # Determine if this release should be reported
+            should_report = False
+            eol_str = eol_from
+
+            if is_eol:
+                should_report = True
+                if not eol_date:
+                    eol_str = "true (already EOL)"
+                    days_until = None
+            elif eol_date and eol_date <= threshold_date:
+                should_report = True
+
+            if should_report:
+                eol_products.append(
+                    {
+                        "product": product,
+                        "cycle": cycle_name,
+                        "eol": eol_str,
+                        "days_until": days_until,
+                    }
+                )
 
     return eol_products
 
