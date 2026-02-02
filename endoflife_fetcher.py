@@ -64,6 +64,8 @@ class Config:
     warn_days: int = 0
     quiet: bool = False
     one_file: bool = False
+    lts: bool = False
+    active: bool = False
     output_dir: str = "Output"
     combined_filename: str = "all-products-eol.json"
     products: list[str] = field(default_factory=list)
@@ -141,6 +143,10 @@ def load_config(config_path: Path | str | None = None) -> Config:
                 config.quiet = bool(file_config["quiet"])
             if "one_file" in file_config:
                 config.one_file = bool(file_config["one_file"])
+            if "lts" in file_config:
+                config.lts = bool(file_config["lts"])
+            if "active" in file_config:
+                config.active = bool(file_config["active"])
             if "output_dir" in file_config:
                 config.output_dir = str(file_config["output_dir"])
             if "combined_filename" in file_config:
@@ -305,6 +311,41 @@ def fetch_products_list(timeout: float = 15, max_retries: int = 3) -> list[str]:
         raise EOLDAPIError(f"Unexpected API response structure: {e}") from e
 
     return products
+
+
+def filter_releases(
+    releases: list[dict[str, Any]], lts: bool = False, active: bool = False
+) -> list[dict[str, Any]]:
+    """
+    Filter releases based on LTS and active status.
+
+    Args:
+        releases: List of release dicts from the API
+        lts: If True, only include LTS releases
+        active: If True, exclude releases that are already EOL
+
+    Returns:
+        Filtered list of releases
+    """
+    if not lts and not active:
+        return releases
+
+    filtered = []
+    for release in releases:
+        if not isinstance(release, dict):
+            continue
+
+        # Filter by LTS if requested
+        if lts and not release.get("isLts", False):
+            continue
+
+        # Filter by active (not EOL) if requested
+        if active and release.get("isEol", False):
+            continue
+
+        filtered.append(release)
+
+    return filtered
 
 
 def save_json(data: Any, path: str) -> None:
@@ -481,6 +522,20 @@ def parse_args(config: Config | None = None) -> argparse.Namespace:
         ),
     )
 
+    # Filtering options
+    parser.add_argument(
+        "--lts",
+        action="store_true",
+        default=config.lts,
+        help="Only include LTS (Long Term Support) releases",
+    )
+    parser.add_argument(
+        "--active",
+        action="store_true",
+        default=config.active,
+        help="Only include active releases (exclude already EOL)",
+    )
+
     # Check mode options
     parser.add_argument(
         "--check",
@@ -587,6 +642,7 @@ def main() -> None:
     # Storage for results
     results = {}
     errors = {}
+    filtered_empty = []  # Products fetched OK but filtered to empty
 
     # Fetch data for each product
     for product in products:
@@ -595,8 +651,16 @@ def main() -> None:
             data = fetch_product(
                 product, timeout=args.timeout, max_retries=args.max_retries
             )
-            results[product] = data
-            info(f"  [OK] Successfully fetched data for '{product}'")
+
+            # Apply filters if requested
+            data = filter_releases(data, lts=args.lts, active=args.active)
+
+            if not data:
+                info(f"  [OK] No releases match filters for '{product}'")
+                filtered_empty.append(product)
+            else:
+                results[product] = data
+                info(f"  [OK] Successfully fetched data for '{product}'")
         except ProductNotFoundError as e:
             error_msg = str(e)
             errors[product] = {"type": "not_found", "message": error_msg}
@@ -621,6 +685,11 @@ def main() -> None:
 
     # Check if we got any successful results
     if not results:
+        # If all products were filtered to empty (no errors), that's OK - not an error
+        if filtered_empty and not errors:
+            info("\nAll products fetched successfully but no releases matched filters.")
+            return
+
         has_not_found = any(e["type"] == "not_found" for e in errors.values())
         if has_not_found:
             print(

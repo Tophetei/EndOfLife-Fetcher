@@ -31,6 +31,12 @@ quiet = false
 # Save all products in a single JSON file instead of one per product
 one_file = false
 
+# Only include LTS (Long Term Support) releases
+lts = false
+
+# Only include active releases (exclude already EOL)
+active = false
+
 # Output directory for JSON files
 output_dir = "Output"
 
