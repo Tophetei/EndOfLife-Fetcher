@@ -25,6 +25,7 @@ class TestConfigDataclass:
         assert config.output_dir == "Output"
         assert config.combined_filename == "all-products-eol.json"
         assert config.products == []
+        assert config.groups == {}
 
 
 class TestFindConfigFiles:
@@ -125,6 +126,9 @@ active = true
 output_dir = "data"
 combined_filename = "eol-report.json"
 products = ["python", "nodejs"]
+
+[groups]
+backend = ["python", "nodejs"]
 """
         config_file = tmp_path / "endoflife-fetcher.toml"
         config_file.write_text(config_content)
@@ -143,6 +147,7 @@ products = ["python", "nodejs"]
         assert config.output_dir == "data"
         assert config.combined_filename == "eol-report.json"
         assert config.products == ["python", "nodejs"]
+        assert config.groups == {"backend": ["python", "nodejs"]}
 
     def test_local_overrides_user(self, tmp_path, monkeypatch):
         """Test local config overrides user config."""
@@ -160,6 +165,43 @@ products = ["python", "nodejs"]
 
         assert config.timeout == 10  # Local override
         assert config.warn_days == 60  # From user config
+
+    def test_groups_merge_across_configs(self, tmp_path, monkeypatch):
+        """Test groups from multiple configs are merged."""
+        home = tmp_path / "home"
+        user_config = home / ".config" / "endoflife-fetcher" / "config.toml"
+        user_config.parent.mkdir(parents=True)
+        user_config.write_text('[groups]\nbackend = ["python", "nodejs"]')
+
+        local_config = tmp_path / "endoflife-fetcher.toml"
+        local_config.write_text('[groups]\nfrontend = ["react", "vue"]')
+
+        monkeypatch.chdir(tmp_path)
+        with patch.object(Path, "home", return_value=home):
+            config = load_config()
+
+        # Both groups should be present
+        assert "backend" in config.groups
+        assert "frontend" in config.groups
+        assert config.groups["backend"] == ["python", "nodejs"]
+        assert config.groups["frontend"] == ["react", "vue"]
+
+    def test_groups_local_overrides_user(self, tmp_path, monkeypatch):
+        """Test local group definition overrides user config."""
+        home = tmp_path / "home"
+        user_config = home / ".config" / "endoflife-fetcher" / "config.toml"
+        user_config.parent.mkdir(parents=True)
+        user_config.write_text('[groups]\nbackend = ["python", "nodejs"]')
+
+        local_config = tmp_path / "endoflife-fetcher.toml"
+        local_config.write_text('[groups]\nbackend = ["go", "rust"]')  # Override
+
+        monkeypatch.chdir(tmp_path)
+        with patch.object(Path, "home", return_value=home):
+            config = load_config()
+
+        # Local should override user
+        assert config.groups["backend"] == ["go", "rust"]
 
     def test_invalid_toml_warns(self, tmp_path, monkeypatch, capsys):
         """Test invalid TOML shows warning but doesn't crash."""

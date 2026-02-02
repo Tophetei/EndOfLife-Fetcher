@@ -69,6 +69,7 @@ class Config:
     output_dir: str = "Output"
     combined_filename: str = "all-products-eol.json"
     products: list[str] = field(default_factory=list)
+    groups: dict[str, list[str]] = field(default_factory=dict)
 
 
 def find_config_files() -> list[Path]:
@@ -153,6 +154,9 @@ def load_config(config_path: Path | str | None = None) -> Config:
                 config.combined_filename = str(file_config["combined_filename"])
             if "products" in file_config:
                 config.products = list(file_config["products"])
+            if "groups" in file_config:
+                # Merge groups (later files override earlier ones)
+                config.groups.update(file_config["groups"])
 
         except tomllib.TOMLDecodeError as e:
             # Warn but don't fail - config errors shouldn't break the tool
@@ -346,6 +350,61 @@ def filter_releases(
         filtered.append(release)
 
     return filtered
+
+
+def expand_products(
+    products: list[str], groups: dict[str, list[str]]
+) -> tuple[list[str], list[str]]:
+    """
+    Expand product groups (@group syntax) into individual products.
+
+    Supports:
+    - Simple groups: @backend -> ["python", "nodejs"]
+    - Nested groups: @all -> ["@backend", "@frontend"] -> all products
+    - Mixed input: ["@backend", "python"] -> expanded + deduplicated
+    - Circular reference detection
+
+    Args:
+        products: List of products and/or group references (@name)
+        groups: Dict mapping group names to product lists
+
+    Returns:
+        Tuple of (expanded_products, unknown_groups)
+        - expanded_products: Deduplicated list preserving order
+        - unknown_groups: List of group names that weren't found
+    """
+    expanded: list[str] = []
+    unknown: list[str] = []
+    seen: set[str] = set()
+
+    def resolve(item: str, chain: list[str]) -> None:
+        """Recursively resolve a product or group reference."""
+        if item.startswith("@"):
+            group_name = item[1:]
+
+            # Check for circular reference
+            if group_name in chain:
+                cycle = " -> ".join(chain + [group_name])
+                raise ValueError(f"Circular group reference detected: {cycle}")
+
+            if group_name not in groups:
+                if group_name not in unknown:
+                    unknown.append(group_name)
+                return
+
+            # Recursively expand group members
+            for member in groups[group_name]:
+                resolve(member, chain + [group_name])
+        else:
+            # Regular product - add if not already seen
+            if item not in seen:
+                seen.add(item)
+                expanded.append(item)
+
+    for product in products:
+        resolve(product, [])
+
+    return expanded, unknown
 
 
 def save_json(data: Any, path: str) -> None:
@@ -638,6 +697,26 @@ def main() -> None:
             file=sys.stderr,
         )
         sys.exit(1)
+
+    # Expand product groups (@group syntax)
+    try:
+        products, unknown_groups = expand_products(products, config.groups)
+    except ValueError as e:
+        # Circular reference detected
+        print(f"[ERROR] {e}", file=sys.stderr)
+        sys.exit(1)
+
+    # Handle unknown groups
+    if unknown_groups:
+        if not products:
+            # All arguments were unknown groups - fatal error
+            groups_str = ", ".join(f"@{g}" for g in unknown_groups)
+            print(f"[ERROR] Unknown group(s): {groups_str}", file=sys.stderr)
+            sys.exit(1)
+        else:
+            # Some groups unknown but we have products - warn and continue
+            for group in unknown_groups:
+                print(f"Warning: Unknown group '@{group}', skipping", file=sys.stderr)
 
     # Storage for results
     results = {}

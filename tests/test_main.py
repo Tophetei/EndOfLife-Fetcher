@@ -252,15 +252,9 @@ class TestMainMultipleProducts:
 
     @responses.activate
     def test_duplicate_products(self, tmp_path, capsys, monkeypatch):
-        """Test behavior when the same product is specified multiple times."""
+        """Test duplicate products are deduplicated (only fetched once)."""
         releases = [{"name": "3.12", "isEol": False, "eolFrom": "2028-10-31"}]
 
-        responses.add(
-            responses.GET,
-            f"{BASE_URL}/products/python",
-            json=make_v1_response(releases),
-            status=200,
-        )
         responses.add(
             responses.GET,
             f"{BASE_URL}/products/python",
@@ -274,10 +268,9 @@ class TestMainMultipleProducts:
         with patch.object(sys, "argv", test_args):
             main()
 
-        # Should have made 2 API calls
-        assert len(responses.calls) == 2
+        # Should only make 1 API call (duplicates deduplicated)
+        assert len(responses.calls) == 1
 
-        # But only one file saved (dict key collision)
         output_file = tmp_path / "Output" / "python-eol.json"
         assert output_file.exists()
 
@@ -1268,3 +1261,160 @@ class TestMainFilters:
 
         assert len(data) == 1
         assert data[0]["name"] == "24"
+
+
+class TestMainProductGroups:
+    """Tests for main() with product groups."""
+
+    @responses.activate
+    def test_group_expansion(self, tmp_path, monkeypatch):
+        """Test @group expands to fetch all products in group."""
+        python_releases = [{"name": "3.12", "isLts": False, "isEol": False}]
+        nodejs_releases = [{"name": "22", "isLts": True, "isEol": False}]
+
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/python",
+            json=make_v1_response(python_releases),
+            status=200,
+        )
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/nodejs",
+            json=make_v1_response(nodejs_releases),
+            status=200,
+        )
+
+        # Create config with group
+        config_file = tmp_path / "endoflife-fetcher.toml"
+        config_file.write_text('[groups]\nbackend = ["python", "nodejs"]')
+
+        monkeypatch.chdir(tmp_path)
+
+        test_args = ["endoflife_fetcher.py", "@backend"]
+        with patch.object(sys, "argv", test_args):
+            main()
+
+        # Both products should be fetched
+        assert (tmp_path / "Output" / "python-eol.json").exists()
+        assert (tmp_path / "Output" / "nodejs-eol.json").exists()
+
+    @responses.activate
+    def test_nested_group_expansion(self, tmp_path, monkeypatch):
+        """Test nested groups (@all -> @backend) expand correctly."""
+        python_releases = [{"name": "3.12", "isLts": False, "isEol": False}]
+        react_releases = [{"name": "19", "isLts": False, "isEol": False}]
+
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/python",
+            json=make_v1_response(python_releases),
+            status=200,
+        )
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/react",
+            json=make_v1_response(react_releases),
+            status=200,
+        )
+
+        config_content = """
+[groups]
+backend = ["python"]
+frontend = ["react"]
+all = ["@backend", "@frontend"]
+"""
+        config_file = tmp_path / "endoflife-fetcher.toml"
+        config_file.write_text(config_content)
+
+        monkeypatch.chdir(tmp_path)
+
+        test_args = ["endoflife_fetcher.py", "@all"]
+        with patch.object(sys, "argv", test_args):
+            main()
+
+        assert (tmp_path / "Output" / "python-eol.json").exists()
+        assert (tmp_path / "Output" / "react-eol.json").exists()
+
+    def test_unknown_group_only_exits(self, tmp_path, capsys, monkeypatch):
+        """Test unknown group as only argument exits with error."""
+        monkeypatch.chdir(tmp_path)
+
+        test_args = ["endoflife_fetcher.py", "@unknown"]
+        with patch.object(sys, "argv", test_args):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "Unknown group(s): @unknown" in captured.err
+
+    @responses.activate
+    def test_unknown_group_with_valid_products_warns(
+        self, tmp_path, capsys, monkeypatch
+    ):
+        """Test unknown group with valid products warns but continues."""
+        python_releases = [{"name": "3.12", "isLts": False, "isEol": False}]
+
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/python",
+            json=make_v1_response(python_releases),
+            status=200,
+        )
+
+        monkeypatch.chdir(tmp_path)
+
+        test_args = ["endoflife_fetcher.py", "@unknown", "python"]
+        with patch.object(sys, "argv", test_args):
+            main()
+
+        captured = capsys.readouterr()
+        assert "Warning: Unknown group '@unknown'" in captured.err
+        assert (tmp_path / "Output" / "python-eol.json").exists()
+
+    def test_circular_group_reference_exits(self, tmp_path, capsys, monkeypatch):
+        """Test circular group reference exits with error."""
+        config_content = """
+[groups]
+a = ["@b"]
+b = ["@a"]
+"""
+        config_file = tmp_path / "endoflife-fetcher.toml"
+        config_file.write_text(config_content)
+
+        monkeypatch.chdir(tmp_path)
+
+        test_args = ["endoflife_fetcher.py", "@a"]
+        with patch.object(sys, "argv", test_args):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "Circular group reference detected" in captured.err
+
+    @responses.activate
+    def test_group_deduplication(self, tmp_path, monkeypatch):
+        """Test product in group and CLI is fetched only once."""
+        python_releases = [{"name": "3.12", "isLts": False, "isEol": False}]
+
+        # Should only be called once despite python in both group and CLI
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/python",
+            json=make_v1_response(python_releases),
+            status=200,
+        )
+
+        config_file = tmp_path / "endoflife-fetcher.toml"
+        config_file.write_text('[groups]\nbackend = ["python"]')
+
+        monkeypatch.chdir(tmp_path)
+
+        test_args = ["endoflife_fetcher.py", "@backend", "python"]
+        with patch.object(sys, "argv", test_args):
+            main()
+
+        # responses library will fail if called more than once
+        assert len(responses.calls) == 1

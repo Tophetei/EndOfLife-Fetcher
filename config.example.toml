@@ -45,3 +45,12 @@ combined_filename = "all-products-eol.json"
 
 # Default products to fetch (can be overridden by CLI arguments)
 # products = ["python", "nodejs", "ubuntu"]
+
+# Product groups for batch fetching
+# Use @groupname on CLI: endoflife-fetcher @backend
+# Groups can reference other groups for composition
+# [groups]
+# backend = ["python", "nodejs", "postgresql", "redis"]
+# frontend = ["nodejs", "react", "vue"]
+# infra = ["ubuntu", "debian", "docker", "kubernetes"]
+# all = ["@backend", "@frontend", "@infra"]  # Nested groups
