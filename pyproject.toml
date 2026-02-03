@@ -42,6 +42,8 @@ dev = [
     "responses>=0.23.0",
     "ruff",
     "pre-commit>=3.5.0",
+    "mypy>=1.0.0",
+    "types-requests",
 ]
 
 [project.scripts]

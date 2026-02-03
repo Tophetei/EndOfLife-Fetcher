@@ -8,9 +8,22 @@ import sys
 from typing import Any
 
 from . import __version__
-from .api import EOLDAPIError, fetch_product, fetch_products_list
+from .api import fetch_product, fetch_products_list
 from .config import Config, load_config
-from .exceptions import FileSaveError, ProductNotFoundError, RateLimitError
+from .constants import (
+    EXIT_API_ERROR,
+    EXIT_EOL_CHECK_FAILED,
+    EXIT_FILE_ERROR,
+    EXIT_NOT_FOUND,
+    EXIT_PARTIAL_SUCCESS,
+    EXIT_RATE_LIMIT,
+)
+from .exceptions import (
+    EOLDAPIError,
+    FileSaveError,
+    ProductNotFoundError,
+    RateLimitError,
+)
 from .filters import expand_products, filter_releases
 from .output import check_eol_status, save_json
 
@@ -42,7 +55,7 @@ def _handle_list_products(args: argparse.Namespace) -> None:
             print(product)
     except EOLDAPIError as e:
         print(f"[ERROR] {e}", file=sys.stderr)
-        sys.exit(11)
+        sys.exit(EXIT_API_ERROR)
 
 
 def _expand_and_validate_products(
@@ -148,11 +161,11 @@ def _handle_no_results(
         )
 
     if has_not_found:
-        sys.exit(10)
+        sys.exit(EXIT_NOT_FOUND)
     elif any(e["type"] == "rate_limit" for e in errors.values()):
-        sys.exit(13)
+        sys.exit(EXIT_RATE_LIMIT)
     else:
-        sys.exit(11)
+        sys.exit(EXIT_API_ERROR)
 
 
 def _save_results(
@@ -203,7 +216,7 @@ def _save_results(
 
     except FileSaveError as e:
         print(f"\nError: {e}", file=sys.stderr)
-        sys.exit(12)
+        sys.exit(EXIT_FILE_ERROR)
 
 
 def _report_partial_errors(errors: dict[str, Any]) -> None:
@@ -218,7 +231,7 @@ def _report_partial_errors(errors: dict[str, Any]) -> None:
             file=sys.stderr,
         )
 
-    sys.exit(5)
+    sys.exit(EXIT_PARTIAL_SUCCESS)
 
 
 def _handle_check_mode(results: dict[str, Any], warn_days: int) -> None:
@@ -241,7 +254,7 @@ def _handle_check_mode(results: dict[str, Any], warn_days: int) -> None:
                 f"  - {item['product']} {item['cycle']}: {status} ({item['eol']})",
                 file=sys.stderr,
             )
-        sys.exit(1)
+        sys.exit(EXIT_EOL_CHECK_FAILED)
 
 
 def parse_args(config: Config | None = None) -> argparse.Namespace:

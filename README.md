@@ -189,15 +189,17 @@ endoflife-fetcher python --max-retries 0
 
 ## Exit Codes
 
-| Code | Meaning |
-| ------ | --------- |
-| `0` | Success |
-| `1` | EOL check failed (`--check` found EOL products) |
-| `5` | Partial success (some products failed) |
-| `10` | Product not found (404) |
-| `11` | API or network error |
-| `12` | File writing error |
-| `13` | Rate limit exceeded (429) |
+| Code | Constant | Meaning |
+| ---- | -------- | ------- |
+| `0` | `EXIT_SUCCESS` | Success |
+| `1` | `EXIT_EOL_CHECK_FAILED` | EOL check failed (`--check` found EOL products) |
+| `5` | `EXIT_PARTIAL_SUCCESS` | Partial success (some products failed) |
+| `10` | `EXIT_NOT_FOUND` | Product not found (404) |
+| `11` | `EXIT_API_ERROR` | API or network error |
+| `12` | `EXIT_FILE_ERROR` | File writing error |
+| `13` | `EXIT_RATE_LIMIT` | Rate limit exceeded (429) |
+
+Constants are available in `endoflife_fetcher.constants` for programmatic use.
 
 ## API Compliance
 

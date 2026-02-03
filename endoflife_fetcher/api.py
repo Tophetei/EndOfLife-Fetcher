@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from .exceptions import BASE_URL, EOLDAPIError, ProductNotFoundError, RateLimitError
+from .constants import BASE_URL
+from .exceptions import EOLDAPIError, ProductNotFoundError, RateLimitError
 
 
 def create_retry_session(
@@ -101,7 +102,7 @@ def _api_get(
         return {"_status_code": resp.status_code, "_ok": False}
 
     try:
-        return resp.json()
+        return cast(dict[str, Any], resp.json())
     except ValueError as e:
         raise EOLDAPIError(f"Invalid JSON received from API: {e}") from e
 
@@ -138,7 +139,7 @@ def fetch_product(
 
     # Extract releases from v1 API response structure
     try:
-        return data["result"]["releases"]
+        return cast(list[dict[str, Any]], data["result"]["releases"])
     except (KeyError, TypeError) as e:
         raise EOLDAPIError(
             f"Unexpected API response structure for '{product}': {e}"
