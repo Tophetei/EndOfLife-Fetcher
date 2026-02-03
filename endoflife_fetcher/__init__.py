@@ -9,8 +9,8 @@ __version__ = "1.0.0"
 from .api import fetch_product, fetch_products_list
 from .cli import main, parse_args
 from .config import Config, find_config_files, load_config
+from .constants import BASE_URL
 from .exceptions import (
-    BASE_URL,
     EOLDAPIError,
     FileSaveError,
     ProductNotFoundError,

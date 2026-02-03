@@ -27,6 +27,3 @@ class FileSaveError(Exception):
     """Exception raised when file saving fails."""
 
     pass
-
-
-BASE_URL = "https://endoflife.date/api/v1"

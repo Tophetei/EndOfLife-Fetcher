@@ -8,7 +8,8 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from .exceptions import BASE_URL, EOLDAPIError, ProductNotFoundError, RateLimitError
+from .constants import BASE_URL
+from .exceptions import EOLDAPIError, ProductNotFoundError, RateLimitError
 
 
 def create_retry_session(
