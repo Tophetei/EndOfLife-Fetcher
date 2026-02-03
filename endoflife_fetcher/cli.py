@@ -8,7 +8,7 @@ import sys
 from typing import Any
 
 from . import __version__
-from .api import EOLDAPIError, fetch_product, fetch_products_list
+from .api import fetch_product, fetch_products_list
 from .config import Config, load_config
 from .constants import (
     EXIT_API_ERROR,
@@ -18,7 +18,12 @@ from .constants import (
     EXIT_PARTIAL_SUCCESS,
     EXIT_RATE_LIMIT,
 )
-from .exceptions import FileSaveError, ProductNotFoundError, RateLimitError
+from .exceptions import (
+    EOLDAPIError,
+    FileSaveError,
+    ProductNotFoundError,
+    RateLimitError,
+)
 from .filters import expand_products, filter_releases
 from .output import check_eol_status, save_json
 
