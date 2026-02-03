@@ -12,6 +12,16 @@ import sys
 import pytest
 
 
+class TestModuleImport:
+    """Tests for module import."""
+
+    def test_main_module_import(self):
+        """Test that __main__ module can be imported."""
+        import endoflife_fetcher.__main__ as main_module
+
+        assert hasattr(main_module, "main")
+
+
 class TestCLIEntrypoint:
     """Tests for the installed CLI entry point."""
 

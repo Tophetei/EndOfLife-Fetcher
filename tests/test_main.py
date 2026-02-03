@@ -720,7 +720,8 @@ class TestMainFileSaveErrors:
 
         with patch.object(sys, "argv", test_args):
             with patch(
-                "endoflife_fetcher.save_json", side_effect=FileSaveError("Mock error")
+                "endoflife_fetcher.cli.save_json",
+                side_effect=FileSaveError("Mock error"),
             ):
                 with pytest.raises(SystemExit) as exc_info:
                     main()
@@ -753,7 +754,7 @@ class TestMainFileSaveErrors:
 
         with patch.object(sys, "argv", test_args):
             with patch(
-                "endoflife_fetcher.save_json",
+                "endoflife_fetcher.cli.save_json",
                 side_effect=FileSaveError("Disk full"),
             ):
                 with pytest.raises(SystemExit) as exc_info:
