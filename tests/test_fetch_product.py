@@ -2,6 +2,7 @@
 Tests for the fetch_product function.
 """
 
+import json
 from unittest.mock import patch
 
 import pytest
@@ -13,6 +14,7 @@ from endoflife_fetcher import (
     EOLDAPIError,
     ProductNotFoundError,
     RateLimitError,
+    ResponseTooLargeError,
     fetch_product,
     fetch_products_list,
 )
@@ -453,3 +455,116 @@ class TestFetchProductsList:
             fetch_products_list()
 
         assert "Invalid JSON" in str(exc_info.value)
+
+
+class TestFetchProductSlugEscaping:
+    """Tests for product slug escaping in the request URL."""
+
+    @responses.activate
+    def test_slug_with_dot_segments_stays_under_products(self):
+        """Test that a '../' slug cannot retarget another endpoint."""
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/..%2Fcategories",
+            json=make_v1_response([]),
+            status=200,
+        )
+
+        fetch_product("../categories")
+
+        assert len(responses.calls) == 1
+        assert responses.calls[0].request.url.startswith(f"{BASE_URL}/products/")
+        assert "/categories" not in responses.calls[0].request.url.replace(
+            "%2Fcategories", ""
+        )
+
+    @responses.activate
+    def test_ordinary_slug_is_unchanged(self):
+        """Test that escaping leaves a normal product slug untouched."""
+        releases = [{"name": "3.12", "isEol": False}]
+
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/python",
+            json=make_v1_response(releases),
+            status=200,
+        )
+
+        assert fetch_product("python") == releases
+        assert responses.calls[0].request.url == f"{BASE_URL}/products/python"
+
+
+class TestResponseSizeLimit:
+    """Tests for the response body size cap."""
+
+    @responses.activate
+    def test_body_over_limit_is_refused(self):
+        """Test that an oversized body raises ResponseTooLargeError."""
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/python",
+            body="x" * 5000,
+            status=200,
+        )
+
+        with pytest.raises(ResponseTooLargeError) as exc_info:
+            fetch_product("python", max_bytes=1000)
+
+        assert "1000 byte limit" in str(exc_info.value)
+
+    @responses.activate
+    def test_declared_content_length_over_limit_is_refused(self):
+        """Test that an oversized Content-Length is refused before the body."""
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/python",
+            body="x" * 5000,
+            status=200,
+            headers={"Content-Length": "5000"},
+        )
+
+        with pytest.raises(ResponseTooLargeError) as exc_info:
+            fetch_product("python", max_bytes=1000)
+
+        assert "declares 5000 bytes" in str(exc_info.value)
+
+    @responses.activate
+    def test_body_at_limit_is_accepted(self):
+        """Test that a body exactly at the limit is still accepted."""
+        payload = json.dumps(make_v1_response([]))
+
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/python",
+            body=payload,
+            status=200,
+        )
+
+        assert fetch_product("python", max_bytes=len(payload)) == []
+
+    @responses.activate
+    def test_products_list_honours_limit(self):
+        """Test that fetch_products_list enforces max_bytes too."""
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products",
+            body="x" * 5000,
+            status=200,
+        )
+
+        with pytest.raises(ResponseTooLargeError):
+            fetch_products_list(max_bytes=1000)
+
+    @responses.activate
+    def test_default_limit_allows_a_realistic_payload(self):
+        """Test that the default limit does not refuse ordinary responses."""
+        releases = [{"name": str(i), "isEol": False} for i in range(500)]
+
+        responses.add(
+            responses.GET,
+            f"{BASE_URL}/products/python",
+            json=make_v1_response(releases),
+            status=200,
+        )
+
+        assert fetch_product("python") == releases
