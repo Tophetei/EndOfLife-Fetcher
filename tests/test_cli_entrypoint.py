@@ -33,7 +33,7 @@ class TestCLIEntrypoint:
             text=True,
         )
         assert result.returncode == 0
-        assert "1.0.0" in result.stdout
+        assert "1.1.0" in result.stdout
 
     def test_version_short_flag(self):
         """Test -V flag returns version info."""
@@ -43,7 +43,7 @@ class TestCLIEntrypoint:
             text=True,
         )
         assert result.returncode == 0
-        assert "1.0.0" in result.stdout
+        assert "1.1.0" in result.stdout
 
     def test_help_flag(self):
         """Test --help flag shows usage information."""
@@ -88,7 +88,7 @@ class TestInstalledEntrypoint:
             text=True,
         )
         assert result.returncode == 0
-        assert "1.0.0" in result.stdout
+        assert "1.1.0" in result.stdout
 
     def test_installed_entrypoint_help(self):
         """Test installed entry point --help flag."""

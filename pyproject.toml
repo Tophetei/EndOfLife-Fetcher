@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "endoflife-fetcher"
-version = "1.0.0"
+version = "1.1.0"
 description = "Fetch end-of-life data from endoflife.date API and save as JSON"
 readme = "README.md"
 license = "MIT"

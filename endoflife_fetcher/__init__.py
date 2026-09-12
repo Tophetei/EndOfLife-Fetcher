@@ -4,7 +4,7 @@ EndOfLife-Fetcher: Fetch end-of-life data from endoflife.date API.
 This package provides a CLI tool and library for fetching EOL data.
 """
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 from .api import fetch_product, fetch_products_list
 from .cli import main, parse_args
