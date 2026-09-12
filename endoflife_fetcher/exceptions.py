@@ -23,6 +23,12 @@ class RateLimitError(EOLDAPIError):
         self.retry_after = retry_after
 
 
+class ResponseTooLargeError(EOLDAPIError):
+    """Exception raised when a response body exceeds the size limit."""
+
+    pass
+
+
 class FileSaveError(Exception):
     """Exception raised when file saving fails."""
 

@@ -206,6 +206,7 @@ Constants are available in `endoflife_fetcher.constants` for programmatic use.
 This tool follows [endoflife.date API guidelines](https://endoflife.date/docs/api/v1/):
 
 - **Rate limiting** — Respects 429 responses with `Retry-After` header
+- **Response size** — Bodies capped at `MAX_RESPONSE_BYTES` (12 MiB); override per call with `max_bytes`
 - **Transient errors** — Automatic retry with backoff on 5xx (Netlify infrastructure)
 - **Redirects** — Follows 301 redirects for renamed products
 - **Forward compatible** — Accepts new fields and enum values without breaking

@@ -2,6 +2,7 @@
 
 # API Configuration
 BASE_URL = "https://endoflife.date/api/v1"
+MAX_RESPONSE_BYTES = 12 * 1024 * 1024  # ~4x /products/full (2.7 MiB, 2026-09-12)
 
 # Exit codes
 EXIT_SUCCESS = 0
